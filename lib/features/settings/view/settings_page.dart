@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
 import '../../../core/widgets/common_widgets.dart';
+import '../../../core/widgets/adaptive_widgets.dart';
+import '../../../core/utils/platform_utils.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -25,16 +28,16 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Paramètres'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Get.back(),
-        ),
-      ),
+    final appBar = AdaptiveWidgets.adaptiveAppBar(
+      title: 'Paramètres',
+      automaticallyImplyLeading: true,
+    );
+    
+    return AdaptiveWidgets.adaptiveScaffold(
+      appBar: appBar,
+      backgroundColor: PlatformUtils.isIOS 
+          ? CupertinoColors.systemBackground 
+          : null,
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -142,7 +145,7 @@ class _SettingsPageState extends State<SettingsPage> {
             icon: Icons.fingerprint,
             title: 'Authentification biométrique',
             subtitle: 'Utiliser l\'empreinte digitale ou Face ID',
-            trailing: Switch(
+            trailing: AdaptiveWidgets.adaptiveSwitch(
               value: _biometricEnabled,
               onChanged: (value) {
                 setState(() {
@@ -497,10 +500,12 @@ class _SettingsPageState extends State<SettingsPage> {
     Widget? trailing,
     VoidCallback? onTap,
   }) {
-    return ListTile(
+    return AdaptiveWidgets.adaptiveListTile(
       leading: Icon(
         icon,
-        color: Get.theme.primaryColor,
+        color: PlatformUtils.isIOS 
+            ? CupertinoColors.activeBlue 
+            : Get.theme.primaryColor,
       ),
       title: Text(title),
       subtitle: Text(subtitle),
@@ -510,35 +515,19 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _showDeleteDataDialog() {
-    Get.dialog(
-      AlertDialog(
-        title: const Text('Supprimer les données'),
-        content: const Text(
-          'Êtes-vous sûr de vouloir supprimer toutes les données de l\'application ? Cette action est irréversible.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Get.back(),
-            child: const Text('Annuler'),
-          ),
-          TextButton(
-            onPressed: () {
-              Get.back();
-              Get.snackbar(
-                'Données supprimées',
-                'Toutes les données ont été supprimées',
-                snackPosition: SnackPosition.BOTTOM,
-                backgroundColor: Colors.red,
-                colorText: Colors.white,
-              );
-            },
-            child: const Text(
-              'Supprimer',
-              style: TextStyle(color: Colors.red),
-            ),
-          ),
-        ],
-      ),
+    AdaptiveWidgets.showAdaptiveDialog(
+      context: context,
+      title: 'Supprimer les données',
+      content: 'Êtes-vous sûr de vouloir supprimer toutes les données de l\'application ? Cette action est irréversible.',
+      confirmText: 'Supprimer',
+      cancelText: 'Annuler',
+      onConfirm: () {
+        AdaptiveWidgets.showAdaptiveSnackbar(
+          message: 'Toutes les données ont été supprimées',
+          backgroundColor: Colors.red,
+          textColor: Colors.white,
+        );
+      },
     );
   }
 } 

@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/common_widgets.dart';
+import 'core/widgets/adaptive_widgets.dart';
+import 'core/utils/platform_utils.dart';
 import 'features/auth/view/login_page.dart';
+import 'features/auth/view/register_page.dart';
 import 'features/chat/view/chat_list_page.dart';
 import 'features/chat/view/chat_page.dart';
 import 'features/calls/view/calls_page.dart';
@@ -10,6 +14,7 @@ import 'features/stories/view/stories_page.dart';
 import 'features/settings/view/settings_page.dart';
 import 'features/contacts/view/contacts_page.dart';
 import 'core/controllers/app_controller.dart';
+import 'core/services/agora_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,6 +24,9 @@ void main() async {
     return AppController();
   });
   
+  // Initialiser AgoraService
+  Get.put(AgoraService.instance);
+  
   runApp(const KisseApp());
 }
 
@@ -27,26 +35,63 @@ class KisseApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GetMaterialApp(
-      title: 'Kisse - Messagerie Sécurisée',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.system,
-      home: const SplashPage(),
-      getPages: [
-        GetPage(name: '/splash', page: () => const SplashPage()),
-        GetPage(name: '/login', page: () => const LoginPage()),
-        GetPage(name: '/home', page: () => const HomePage()),
-        GetPage(name: '/chat/:id', page: () => ChatPage(
-          chatId: Get.parameters['id'] ?? '',
-          conversation: Get.arguments,
-        )),
-        GetPage(name: '/stories', page: () => const StoriesPage()),
-        GetPage(name: '/settings', page: () => const SettingsPage()),
-        GetPage(name: '/contacts', page: () => const ContactsPage()),
-      ],
-    );
+    // Utiliser CupertinoApp pour iOS et MaterialApp pour Android
+    if (PlatformUtils.isIOS) {
+      return GetMaterialApp(
+        title: 'Kisse - Messagerie Sécurisée',
+        debugShowCheckedModeBanner: false,
+        navigatorKey: Get.key,
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: ThemeMode.system,
+        home: const SplashPage(),
+        getPages: [
+          GetPage(name: '/splash', page: () => const SplashPage()),
+          GetPage(name: '/login', page: () => const LoginPage()),
+          GetPage(name: '/register', page: () => const RegisterPage()),
+          GetPage(name: '/home', page: () => const HomePage()),
+          GetPage(name: '/chat/:id', page: () => ChatPage(
+            chatId: Get.parameters['id'] ?? '',
+            conversation: Get.arguments,
+          )),
+          GetPage(name: '/stories', page: () => const StoriesPage()),
+          GetPage(name: '/settings', page: () => const SettingsPage()),
+          GetPage(name: '/contacts', page: () => const ContactsPage()),
+        ],
+        builder: (context, child) {
+          return CupertinoTheme(
+            data: const CupertinoThemeData(
+              primaryColor: CupertinoColors.activeBlue,
+              brightness: Brightness.light,
+            ),
+            child: child!,
+          );
+        },
+      );
+    } else {
+      return GetMaterialApp(
+        title: 'Kisse - Messagerie Sécurisée',
+        debugShowCheckedModeBanner: false,
+        navigatorKey: Get.key,
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: ThemeMode.system,
+        home: const SplashPage(),
+        getPages: [
+          GetPage(name: '/splash', page: () => const SplashPage()),
+          GetPage(name: '/login', page: () => const LoginPage()),
+          GetPage(name: '/register', page: () => const RegisterPage()),
+          GetPage(name: '/home', page: () => const HomePage()),
+          GetPage(name: '/chat/:id', page: () => ChatPage(
+            chatId: Get.parameters['id'] ?? '',
+            conversation: Get.arguments,
+          )),
+          GetPage(name: '/stories', page: () => const StoriesPage()),
+          GetPage(name: '/settings', page: () => const SettingsPage()),
+          GetPage(name: '/contacts', page: () => const ContactsPage()),
+        ],
+      );
+    }
   }
 }
 
@@ -233,45 +278,77 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: _pages[_currentIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
-        type: BottomNavigationBarType.fixed,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.chat_bubble_outline),
-            activeIcon: Icon(Icons.chat_bubble),
-            label: 'Chats',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.auto_stories_outlined),
-            activeIcon: Icon(Icons.auto_stories),
-            label: 'Stories',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.people_outline),
-            activeIcon: Icon(Icons.people),
-            label: 'Contacts',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.call_outlined),
-            activeIcon: Icon(Icons.call),
-            label: 'Appels',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            activeIcon: Icon(Icons.person),
-            label: 'Profil',
-          ),
-        ],
-      ),
+    final bottomNavBar = AdaptiveWidgets.adaptiveBottomNavigationBar(
+      currentIndex: _currentIndex,
+      onTap: (index) {
+        setState(() {
+          _currentIndex = index;
+        });
+      },
+      items: [
+        AdaptiveBottomNavigationBarItem(
+          icon: Icon(PlatformUtils.isIOS 
+              ? CupertinoIcons.chat_bubble 
+              : Icons.chat_bubble_outline),
+          activeIcon: Icon(PlatformUtils.isIOS 
+              ? CupertinoIcons.chat_bubble_fill 
+              : Icons.chat_bubble),
+          label: 'Chats',
+        ),
+        AdaptiveBottomNavigationBarItem(
+          icon: Icon(PlatformUtils.isIOS 
+              ? CupertinoIcons.book 
+              : Icons.auto_stories_outlined),
+          activeIcon: Icon(PlatformUtils.isIOS 
+              ? CupertinoIcons.book_fill 
+              : Icons.auto_stories),
+          label: 'Stories',
+        ),
+        AdaptiveBottomNavigationBarItem(
+          icon: Icon(PlatformUtils.isIOS 
+              ? CupertinoIcons.person_2 
+              : Icons.people_outline),
+          activeIcon: Icon(PlatformUtils.isIOS 
+              ? CupertinoIcons.person_2_fill 
+              : Icons.people),
+          label: 'Contacts',
+        ),
+        AdaptiveBottomNavigationBarItem(
+          icon: Icon(PlatformUtils.isIOS 
+              ? CupertinoIcons.phone 
+              : Icons.call_outlined),
+          activeIcon: Icon(PlatformUtils.isIOS 
+              ? CupertinoIcons.phone_fill 
+              : Icons.call),
+          label: 'Appels',
+        ),
+        AdaptiveBottomNavigationBarItem(
+          icon: Icon(PlatformUtils.isIOS 
+              ? CupertinoIcons.person 
+              : Icons.person_outline),
+          activeIcon: Icon(PlatformUtils.isIOS 
+              ? CupertinoIcons.person_fill 
+              : Icons.person),
+          label: 'Profil',
+        ),
+      ],
     );
+    
+    if (PlatformUtils.isIOS) {
+      return CupertinoPageScaffold(
+        child: Column(
+          children: [
+            Expanded(child: _pages[_currentIndex]),
+            bottomNavBar,
+          ],
+        ),
+      );
+    } else {
+      return Scaffold(
+        body: _pages[_currentIndex],
+        bottomNavigationBar: bottomNavBar,
+      );
+    }
   }
 }
 

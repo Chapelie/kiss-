@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'adaptive_widgets.dart';
+import '../theme/app_theme.dart';
 
 /// Widgets communs réutilisables pour l'application Kisse
+/// 
+/// NOTE: Ces widgets utilisent maintenant les widgets adaptatifs
+/// qui s'adaptent automatiquement à iOS (Cupertino) et Android (Material)
 class CommonWidgets {
-  /// Bouton personnalisé avec style cohérent
+  /// Bouton personnalisé avec style cohérent (adaptatif iOS/Android)
   static Widget customButton({
     required String text,
     required VoidCallback onPressed,
@@ -14,40 +19,18 @@ class CommonWidgets {
     BorderRadius? borderRadius,
     bool isLoading = false,
   }) {
-    return SizedBox(
+    return AdaptiveWidgets.adaptiveButton(
+      text: text,
+      onPressed: onPressed,
+      backgroundColor: backgroundColor,
+      textColor: textColor,
       width: width,
       height: height,
-      child: ElevatedButton(
-        onPressed: isLoading ? null : onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: backgroundColor ?? Get.theme.primaryColor,
-          foregroundColor: textColor ?? Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: borderRadius ?? BorderRadius.circular(12),
-          ),
-          elevation: 2,
-        ),
-        child: isLoading
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              )
-            : Text(
-                text,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-      ),
+      isLoading: isLoading,
     );
   }
 
-  /// Champ de texte personnalisé
+  /// Champ de texte personnalisé (adaptatif iOS/Android)
   static Widget customTextField({
     required String label,
     String? hint,
@@ -59,36 +42,26 @@ class CommonWidgets {
     Widget? suffixIcon,
     int? maxLines = 1,
     bool enabled = true,
+    ValueChanged<String>? onChanged,
+    TextInputAction? textInputAction,
   }) {
-    return TextFormField(
+    return AdaptiveWidgets.adaptiveTextField(
+      label: label,
+      hint: hint,
       controller: controller,
       obscureText: obscureText,
       keyboardType: keyboardType,
       validator: validator,
+      prefixIcon: prefixIcon,
+      suffixIcon: suffixIcon,
       maxLines: maxLines,
       enabled: enabled,
-      decoration: InputDecoration(
-        labelText: label,
-        hintText: hint,
-        prefixIcon: prefixIcon,
-        suffixIcon: suffixIcon,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(
-            color: Get.theme.primaryColor,
-            width: 2,
-          ),
-        ),
-        filled: true,
-        fillColor: Get.theme.cardColor,
-      ),
+      onChanged: onChanged,
+      textInputAction: textInputAction,
     );
   }
 
-  /// Carte personnalisée avec ombre
+  /// Carte personnalisée avec ombre (adaptatif iOS/Android)
   static Widget customCard({
     required Widget child,
     EdgeInsetsGeometry? padding,
@@ -96,24 +69,18 @@ class CommonWidgets {
     Color? backgroundColor,
     BorderRadius? borderRadius,
     double elevation = 4,
+    VoidCallback? onTap,
   }) {
-    return Container(
-      margin: margin ?? const EdgeInsets.all(8),
-      child: Card(
-        elevation: elevation,
-        shape: RoundedRectangleBorder(
-          borderRadius: borderRadius ?? BorderRadius.circular(12),
-        ),
-        color: backgroundColor,
-        child: Padding(
-          padding: padding ?? const EdgeInsets.all(16),
-          child: child,
-        ),
-      ),
+    return AdaptiveWidgets.adaptiveCard(
+      child: child,
+      padding: padding,
+      margin: margin,
+      backgroundColor: backgroundColor,
+      onTap: onTap,
     );
   }
 
-  /// Avatar circulaire avec image ou initiales
+  /// Avatar circulaire avec image ou initiales (adaptatif iOS/Android)
   static Widget avatar({
     String? imageUrl,
     String? initials,
@@ -121,60 +88,23 @@ class CommonWidgets {
     Color? backgroundColor,
     Color? textColor,
   }) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: backgroundColor ?? Get.theme.primaryColor,
-        image: imageUrl != null
-            ? DecorationImage(
-                image: NetworkImage(imageUrl),
-                fit: BoxFit.cover,
-              )
-            : null,
-      ),
-      child: imageUrl == null && initials != null
-          ? Center(
-              child: Text(
-                initials.toUpperCase(),
-                style: TextStyle(
-                  color: textColor ?? Colors.white,
-                  fontSize: size * 0.4,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            )
-          : null,
+    return AdaptiveWidgets.adaptiveAvatar(
+      imageUrl: imageUrl,
+      initials: initials,
+      size: size,
+      backgroundColor: backgroundColor,
+      textColor: textColor,
     );
   }
 
-  /// Indicateur de chargement
+  /// Indicateur de chargement (adaptatif iOS/Android)
   static Widget loadingIndicator({
     String? message,
     Color? color,
   }) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(
-              color ?? Get.theme.primaryColor,
-            ),
-          ),
-          if (message != null) ...[
-            const SizedBox(height: 16),
-            Text(
-              message,
-              style: TextStyle(
-                fontSize: 16,
-                color: Get.theme.textTheme.bodyMedium?.color,
-              ),
-            ),
-          ],
-        ],
-      ),
+    return AdaptiveWidgets.adaptiveLoadingIndicator(
+      message: message,
+      color: color,
     );
   }
 
@@ -275,5 +205,67 @@ class CommonWidgets {
           ),
       ],
     );
+  }
+
+  /// Affiche un snackbar de manière sécurisée (vérifie la disponibilité de l'Overlay)
+  static void showSafeSnackbar({
+    required String message,
+    String? title,
+    Color? backgroundColor,
+    Color? textColor,
+    Duration duration = const Duration(seconds: 3),
+    SnackPosition snackPosition = SnackPosition.TOP,
+  }) {
+    try {
+      // Vérifier que le contexte est disponible
+      if (Get.context == null) {
+        print('⚠️ Contexte non disponible pour le snackbar: $message');
+        return;
+      }
+
+      // Vérifier que l'Overlay est disponible
+      try {
+        Overlay.of(Get.context!);
+      } catch (e) {
+        print('⚠️ Overlay non disponible pour le snackbar: $message');
+        return;
+      }
+
+      // Vérifier qu'il n'y a pas déjà un dialog ou snackbar ouvert
+      final isDialogOpen = Get.isDialogOpen ?? false;
+      final isSnackbarOpen = Get.isSnackbarOpen ?? false;
+      
+      if (isDialogOpen || isSnackbarOpen) {
+        // Attendre un peu et réessayer
+        Future.delayed(const Duration(milliseconds: 500), () {
+          showSafeSnackbar(
+            message: message,
+            title: title,
+            backgroundColor: backgroundColor,
+            textColor: textColor,
+            duration: duration,
+            snackPosition: snackPosition,
+          );
+        });
+        return;
+      }
+
+      // Afficher le snackbar
+      Get.snackbar(
+        title ?? '',
+        message,
+        backgroundColor: backgroundColor ?? AppTheme.errorColor,
+        colorText: textColor ?? Colors.white,
+        snackPosition: snackPosition,
+        duration: duration,
+        margin: const EdgeInsets.all(16),
+        borderRadius: 12,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      );
+    } catch (e) {
+      // Si l'Overlay n'est pas disponible, utiliser un simple print
+      print('❌ Erreur lors de l\'affichage du snackbar: $message');
+      print('   Erreur: $e');
+    }
   }
 } 

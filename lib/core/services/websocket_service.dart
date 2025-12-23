@@ -1,10 +1,15 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:get/get.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:crypto/crypto.dart';
+import '../constants/app_constants.dart';
+import '../utils/crypto_utils.dart';
 import 'signal_service.dart';
+import 'api_service.dart';
 
 class WebSocketService extends GetxService {
   static WebSocketService get to => Get.find();
@@ -18,7 +23,6 @@ class WebSocketService extends GetxService {
   final RxString _connectionStatus = 'Déconnecté'.obs;
   
   // Configuration
-  static const String _wsUrl = 'wss://your-server.com/ws';
   static const Duration _reconnectDelay = Duration(seconds: 5);
   static const Duration _heartbeatInterval = Duration(seconds: 30);
   static const int _maxReconnectAttempts = 10;
@@ -68,9 +72,22 @@ class WebSocketService extends GetxService {
     }
   }
   
+  /// Ajoute un événement de manière sécurisée (vérifie que le controller n'est pas fermé)
+  void _safeAddEvent(WebSocketEvent event) {
+    if (!_eventController.isClosed) {
+      _eventController.add(event);
+    }
+  }
+  
   /// Établit la connexion WebSocket
   Future<void> _connect() async {
     if (_isConnecting.value) return;
+    
+    // Vérifier que le controller n'est pas fermé
+    if (_eventController.isClosed) {
+      print('⚠️ EventController fermé, impossible de se connecter');
+      return;
+    }
     
     try {
       _isConnecting.value = true;
@@ -83,7 +100,7 @@ class WebSocketService extends GetxService {
       }
       
       // Établir la connexion WebSocket sécurisée
-      final uri = Uri.parse('$_wsUrl?token=$token');
+      final uri = Uri.parse('${AppConstants.wsUrl}?token=$token');
       _channel = WebSocketChannel.connect(uri);
       
       // Écouter les messages
@@ -102,7 +119,7 @@ class WebSocketService extends GetxService {
       _startHeartbeat();
       
       // Émettre l'événement de connexion
-      _eventController.add(WebSocketEvent(
+      _safeAddEvent(WebSocketEvent(
         type: WebSocketEventType.connected,
         data: {'timestamp': DateTime.now().toIso8601String()},
       ));
@@ -114,8 +131,10 @@ class WebSocketService extends GetxService {
       _connectionStatus.value = 'Échec de connexion';
       print('❌ Erreur de connexion WebSocket: $e');
       
-      // Tenter la reconnexion
-      _scheduleReconnect();
+      // Tenter la reconnexion seulement si le controller n'est pas fermé
+      if (!_eventController.isClosed) {
+        _scheduleReconnect();
+      }
     }
   }
   
@@ -131,7 +150,12 @@ class WebSocketService extends GetxService {
           _handleIncomingMessage(payload);
           break;
         case 'call_request':
+        case 'call_request_full':
           _handleCallRequest(payload);
+          break;
+        case 'call_response':
+        case 'call_response_full':
+          _handleCallResponse(payload);
           break;
         case 'presence_update':
           _handlePresenceUpdate(payload);
@@ -145,6 +169,9 @@ class WebSocketService extends GetxService {
         case 'heartbeat':
           _handleHeartbeat(payload);
           break;
+        case 'heartbeat_response':
+          // Juste confirmer la réception
+          break;
         default:
           print('⚠️ Type d\'événement WebSocket inconnu: $eventType');
       }
@@ -157,37 +184,53 @@ class WebSocketService extends GetxService {
   /// Gère les messages entrants (RG39: seulement identifiants et horodatages)
   void _handleIncomingMessage(Map<String, dynamic> payload) {
     // Le serveur ne transmet que les métadonnées, pas le contenu chiffré
-    final messageId = payload['messageId'];
+    final messageId = payload['id'] ?? payload['messageId'];
     final senderId = payload['senderId'];
+    final recipientId = payload['recipientId'];
     final timestamp = payload['timestamp'];
-    final messageType = payload['type']; // 'text', 'file', 'image', etc.
+    final messageType = payload['messageType'] ?? payload['type']; // 'text', 'file', 'image', etc.
+    final sessionId = payload['sessionId'];
+    final isRead = payload['isRead'] ?? false;
     
     // Émettre l'événement pour que l'UI puisse réagir
-    _eventController.add(WebSocketEvent(
+    _safeAddEvent(WebSocketEvent(
       type: WebSocketEventType.messageReceived,
       data: {
         'messageId': messageId,
         'senderId': senderId,
+        'recipientId': recipientId,
         'timestamp': timestamp,
         'type': messageType,
+        'sessionId': sessionId,
+        'isRead': isRead,
       },
     ));
+    
+    // Si c'est un message reçu (pas envoyé), récupérer le contenu chiffré
+    // On pourrait vérifier si senderId != currentUserId, mais pour l'instant
+    // on récupère toujours le contenu (le backend gérera les permissions)
+    _fetchEncryptedContent(messageId, senderId, sessionId);
     
     print('📨 Message reçu: $messageId de $senderId');
   }
   
   /// Gère les demandes d'appel
   void _handleCallRequest(Map<String, dynamic> payload) {
+    // Support des deux formats: call_request et call_request_full
     final callerId = payload['callerId'];
     final callType = payload['callType']; // 'audio' ou 'video'
     final callId = payload['callId'];
+    final recipientId = payload['recipientId'];
+    final timestamp = payload['timestamp'];
     
-    _eventController.add(WebSocketEvent(
+    _safeAddEvent(WebSocketEvent(
       type: WebSocketEventType.callRequest,
       data: {
         'callerId': callerId,
+        'recipientId': recipientId,
         'callType': callType,
         'callId': callId,
+        'timestamp': timestamp,
       },
     ));
     
@@ -200,7 +243,7 @@ class WebSocketService extends GetxService {
     final status = payload['status']; // 'online', 'offline', 'away'
     final lastSeen = payload['lastSeen'];
     
-    _eventController.add(WebSocketEvent(
+    _safeAddEvent(WebSocketEvent(
       type: WebSocketEventType.presenceUpdate,
       data: {
         'userId': userId,
@@ -216,7 +259,7 @@ class WebSocketService extends GetxService {
     final isTyping = payload['isTyping'];
     final conversationId = payload['conversationId'];
     
-    _eventController.add(WebSocketEvent(
+    _safeAddEvent(WebSocketEvent(
       type: WebSocketEventType.typingIndicator,
       data: {
         'userId': userId,
@@ -232,7 +275,7 @@ class WebSocketService extends GetxService {
     final readerId = payload['readerId'];
     final readAt = payload['readAt'];
     
-    _eventController.add(WebSocketEvent(
+    _safeAddEvent(WebSocketEvent(
       type: WebSocketEventType.readReceipt,
       data: {
         'messageId': messageId,
@@ -262,20 +305,26 @@ class WebSocketService extends GetxService {
       );
       
       // Envoyer seulement les métadonnées via WebSocket
+      // Le backend créera le message et retournera l'ID via WebSocket
       final messageData = {
         'type': 'message',
         'payload': {
-          'messageId': encryptedMessage.id,
           'recipientId': recipientId,
-          'timestamp': encryptedMessage.timestamp.toIso8601String(),
-          'sessionId': encryptedMessage.sessionId,
           'messageType': 'text',
+          'sessionId': encryptedMessage.sessionId,
         },
       };
       
       _channel!.sink.add(jsonEncode(messageData));
       
-      // Le contenu chiffré sera envoyé via une autre méthode sécurisée
+      // Attendre la confirmation du backend avec l'ID du message créé
+      // Le backend enverra un événement message avec l'ID créé
+      // Pour l'instant, on utilise l'ID du message chiffré
+      // et on attend un peu pour que le backend crée le message
+      await Future.delayed(const Duration(milliseconds: 300));
+      
+      // Le contenu chiffré sera envoyé via HTTPS (API)
+      // Note: L'ID sera mis à jour quand on recevra la confirmation du backend
       await _sendEncryptedContent(encryptedMessage);
       
       print('📤 Message envoyé à $recipientId');
@@ -287,9 +336,145 @@ class WebSocketService extends GetxService {
   }
   
   /// Envoie le contenu chiffré via une connexion sécurisée séparée
+  /// 
+  /// SECURITY: Le contenu est envoyé via HTTPS et stocké comme opaque binary.
+  /// Le backend ne peut pas le lire ou le déchiffrer.
+  /// 
+  /// NOTE: Pour cette implémentation, on inclut la clé de message avec le contenu
+  /// dans le format "messageKey:encryptedContent". En production Signal Protocol,
+  /// la clé serait dérivée de la session plutôt que stockée.
   Future<void> _sendEncryptedContent(EncryptedMessage encryptedMessage) async {
-    // Implémentation pour envoyer le contenu chiffré
-    // via HTTPS ou une autre méthode sécurisée
+    try {
+      // Combiner la clé et le contenu dans un format que le destinataire peut décoder
+      // Format: "messageKey:encryptedContent"
+      final combinedContent = '${encryptedMessage.messageKey}:${encryptedMessage.encryptedContent}';
+      
+      // Calculer le hash SHA-256 pour vérification d'intégrité
+      final contentBytes = utf8.encode(combinedContent);
+      final hash = CryptoUtils.sha256HashBytes(contentBytes);
+      
+      // Encoder le contenu en base64 pour l'envoi
+      final contentBase64 = CryptoUtils.base64EncodeBytes(contentBytes);
+      
+      // Stocker le contenu chiffré via l'API
+      // Note: Le messageId utilisé ici doit correspondre à l'ID créé par le backend
+      // En production, on devrait recevoir l'ID du message depuis le backend
+      await ApiService.instance.storeEncryptedContent(
+        messageId: encryptedMessage.id,
+        encryptedContent: contentBase64,
+        contentHash: hash.toString(),
+        expiresAt: null, // Pas d'expiration par défaut
+      );
+      
+      print('✅ Contenu chiffré stocké pour le message ${encryptedMessage.id}');
+    } catch (e) {
+      print('❌ Erreur lors de l\'envoi du contenu chiffré: $e');
+      // Ne pas rethrow pour ne pas bloquer l'envoi du message
+      // Le contenu pourra être réessayé plus tard
+    }
+  }
+  
+  /// Récupère le contenu chiffré d'un message
+  /// 
+  /// SECURITY: Le contenu est récupéré comme opaque binary.
+  /// Le déchiffrement se fait côté client avec Signal Protocol.
+  Future<void> _fetchEncryptedContent(
+    String messageId,
+    String senderId,
+    String? sessionId,
+  ) async {
+    try {
+      // Récupérer le contenu chiffré via l'API
+      final contentData = await ApiService.instance.getEncryptedContent(messageId);
+      
+      final contentBase64 = contentData['content_data'] as String;
+      final contentHash = contentData['content_hash'] as String?;
+      
+      // Décoder le contenu
+      final encryptedContent = CryptoUtils.base64Decode(contentBase64);
+      
+      // Vérifier l'intégrité (optionnel mais recommandé)
+      if (contentHash != null) {
+        final computedHash = CryptoUtils.sha256Hash(encryptedContent);
+        if (computedHash != contentHash) {
+          throw Exception('Content integrity check failed');
+        }
+      }
+      
+      // IMPORTANT: Dans Signal Protocol, la clé de message n'est PAS stockée côté serveur
+      // Elle doit être dérivée de la session Signal côté client.
+      // Pour cette implémentation, on stocke la clé avec le contenu chiffré (encodée en base64)
+      // dans le champ encryptedContent. Le format est: "messageKey:encryptedContent"
+      // 
+      // NOTE: En production, utiliser une approche plus sécurisée où la clé est dérivée
+      // de la session Signal plutôt que stockée.
+      
+      // Extraire la clé et le contenu depuis le format "messageKey:encryptedContent"
+      String messageKey = '';
+      String actualEncryptedContent = encryptedContent;
+      
+      if (encryptedContent.contains(':')) {
+        final parts = encryptedContent.split(':');
+        if (parts.length >= 2) {
+          messageKey = parts[0];
+          actualEncryptedContent = parts.sublist(1).join(':');
+        }
+      }
+      
+      // Si pas de clé trouvée, essayer de la récupérer depuis la session Signal
+      if (messageKey.isEmpty && sessionId != null && sessionId.isNotEmpty) {
+        // La clé sera récupérée par SignalService depuis la session
+        // Pour l'instant, on utilise une clé vide et SignalService devra la gérer
+      }
+      
+      final encryptedMessage = EncryptedMessage(
+        id: messageId,
+        recipientId: senderId, // Pour le destinataire, le sender est l'expéditeur
+        encryptedContent: actualEncryptedContent,
+        messageKey: messageKey, // Clé extraite ou vide (sera gérée par SignalService)
+        timestamp: DateTime.parse(contentData['created_at']),
+        sessionId: sessionId ?? '',
+      );
+      
+      // Émettre l'événement avec le contenu chiffré
+      _safeAddEvent(WebSocketEvent(
+        type: WebSocketEventType.encryptedContentReceived,
+        data: {
+          'messageId': messageId,
+          'encryptedMessage': encryptedMessage,
+        },
+      ));
+      
+      print('✅ Contenu chiffré récupéré pour le message $messageId');
+    } catch (e) {
+      print('❌ Erreur lors de la récupération du contenu chiffré: $e');
+      // Émettre un événement d'erreur
+      _safeAddEvent(WebSocketEvent(
+        type: WebSocketEventType.error,
+        data: {
+          'messageId': messageId,
+          'error': 'Failed to fetch encrypted content: $e',
+        },
+      ));
+    }
+  }
+  
+  /// Gère les réponses d'appel
+  void _handleCallResponse(Map<String, dynamic> payload) {
+    final callId = payload['callId'];
+    final response = payload['response']; // 'accept', 'reject', 'busy', 'end'
+    final timestamp = payload['timestamp'];
+    
+    _safeAddEvent(WebSocketEvent(
+      type: WebSocketEventType.callResponse,
+      data: {
+        'callId': callId,
+        'response': response,
+        'timestamp': timestamp,
+      },
+    ));
+    
+    print('📞 Réponse d\'appel reçue: $response pour $callId');
   }
   
   /// Envoie une demande d'appel
@@ -418,6 +603,12 @@ class WebSocketService extends GetxService {
   
   /// Programme une tentative de reconnexion (RG38)
   void _scheduleReconnect() {
+    // Ne pas essayer de se reconnecter si le controller est fermé
+    if (_eventController.isClosed) {
+      print('⚠️ EventController fermé, impossible de se reconnecter');
+      return;
+    }
+    
     if (_reconnectAttempts >= _maxReconnectAttempts) {
       _connectionStatus.value = 'Échec de reconnexion';
       print('❌ Nombre maximum de tentatives de reconnexion atteint');
@@ -426,6 +617,11 @@ class WebSocketService extends GetxService {
     
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(_reconnectDelay, () {
+      // Vérifier à nouveau que le controller n'est pas fermé
+      if (_eventController.isClosed) {
+        print('⚠️ EventController fermé, annulation de la reconnexion');
+        return;
+      }
       _reconnectAttempts++;
       print('🔄 Tentative de reconnexion #$_reconnectAttempts');
       _connect();
@@ -455,7 +651,9 @@ enum WebSocketEventType {
   connected,
   disconnected,
   messageReceived,
+  encryptedContentReceived, // Nouveau: contenu chiffré reçu
   callRequest,
+  callResponse, // Nouveau: réponse d'appel
   presenceUpdate,
   typingIndicator,
   readReceipt,

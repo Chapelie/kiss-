@@ -45,5 +45,66 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	
+	<!-- Permissions pour Internet et Réseau -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<false/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>localhost</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+			<key>10.0.2.2</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
+	
+	<!-- Permissions pour le microphone (appels audio) -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Kisse a besoin d'accéder au microphone pour les appels audio et vidéo.</string>
+	
+	<!-- Permissions pour la caméra (appels vidéo et photos) -->
+	<key>NSCameraUsageDescription</key>
+	<string>Kisse a besoin d'accéder à la caméra pour les appels vidéo et prendre des photos.</string>
+	
+	<!-- Permissions pour la galerie de photos -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Kisse a besoin d'accéder à vos photos pour les partager dans les conversations.</string>
+	
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Kisse a besoin d'enregistrer des photos dans votre galerie.</string>
+	
+	<!-- Permissions pour les fichiers -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	
+	<!-- Permissions pour les notifications -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+		<string>audio</string>
+		<string>voip</string>
+	</array>
+	
+	<!-- Permissions pour l'authentification biométrique -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>Kisse utilise Face ID pour sécuriser votre compte.</string>
+	
+	<!-- Configuration pour les appels VoIP -->
+	<key>UISupportsDocumentBrowser</key>
+	<true/>
+	
+	<!-- Configuration pour Agora RTC -->
+	<key>io.flutter.embedded_views_preview</key>
+	<true/>
 </dict>
 </plist>

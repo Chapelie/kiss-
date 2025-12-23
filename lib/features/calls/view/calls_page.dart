@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
 import '../../../core/widgets/common_widgets.dart';
+import '../../../core/widgets/adaptive_widgets.dart';
+import '../../../core/utils/platform_utils.dart';
+import '../../../core/utils/date_utils.dart' as AppDateUtils;
 import '../../../core/theme/app_theme.dart';
+import '../../../core/controllers/app_controller.dart';
+import '../../../core/services/api_service.dart';
 
 class CallsPage extends StatefulWidget {
   const CallsPage({super.key});
@@ -12,9 +18,57 @@ class CallsPage extends StatefulWidget {
 
 class _CallsPageState extends State<CallsPage> {
   int _selectedIndex = 0;
-
-  // Données fictives pour les appels
-  final List<Map<String, dynamic>> _recentCalls = [
+  final AppController _appController = AppController.to;
+  bool _isLoading = false;
+  List<Map<String, dynamic>> _recentCalls = [];
+  List<Map<String, dynamic>> _contacts = [];
+  
+  @override
+  void initState() {
+    super.initState();
+    _loadCallHistory();
+    _loadContacts();
+  }
+  
+  Future<void> _loadCallHistory() async {
+    setState(() {
+      _isLoading = true;
+    });
+    
+    try {
+      final calls = await ApiService.instance.getCallHistory(limit: 50);
+      setState(() {
+        _recentCalls = calls;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('❌ Erreur lors du chargement de l\'historique des appels: $e');
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+  
+  Future<void> _loadContacts() async {
+    try {
+      final conversations = _appController.conversations;
+      setState(() {
+        _contacts = conversations.map((conv) {
+          return {
+            'id': conv.participantId,
+            'name': conv.participantName ?? 'Utilisateur',
+            'avatar': conv.participantAvatar,
+            'isOnline': conv.participantStatus == 'online',
+          };
+        }).toList();
+      });
+    } catch (e) {
+      print('❌ Erreur lors du chargement des contacts: $e');
+    }
+  }
+  
+  // Données fictives pour les appels (fallback)
+  final List<Map<String, dynamic>> _dummyCalls = [
     {
       'id': '1',
       'name': 'Alice Martin',
@@ -57,7 +111,8 @@ class _CallsPageState extends State<CallsPage> {
     },
   ];
 
-  final List<Map<String, dynamic>> _contacts = [
+  // Données fictives pour les contacts (fallback)
+  final List<Map<String, dynamic>> _dummyContacts = [
     {
       'id': '1',
       'name': 'Alice Martin',
@@ -88,19 +143,63 @@ class _CallsPageState extends State<CallsPage> {
     },
   ];
 
+  // Utilise DateUtils pour le formatage (centralisé)
   String _formatTimestamp(DateTime timestamp) {
-    final now = DateTime.now();
-    final difference = now.difference(timestamp);
+    return AppDateUtils.DateUtils.formatRelative(timestamp);
+  }
 
-    if (difference.inDays > 0) {
-      return '${difference.inDays}j';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours}h';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}m';
-    } else {
-      return 'Maintenant';
+  String _formatCallTimestamp(Map<String, dynamic> call) {
+    try {
+      // Essayer timestamp d'abord
+      if (call['timestamp'] != null) {
+        final timestampStr = call['timestamp'].toString();
+        if (timestampStr.isNotEmpty) {
+          final timestamp = DateTime.parse(timestampStr);
+          return _formatTimestamp(timestamp);
+        }
+      }
+      
+      // Essayer created_at
+      if (call['created_at'] != null) {
+        final createdAtStr = call['created_at'].toString();
+        if (createdAtStr.isNotEmpty) {
+          final timestamp = DateTime.parse(createdAtStr);
+          return _formatTimestamp(timestamp);
+        }
+      }
+      
+      // Essayer started_at
+      if (call['started_at'] != null) {
+        final startedAtStr = call['started_at'].toString();
+        if (startedAtStr.isNotEmpty) {
+          final timestamp = DateTime.parse(startedAtStr);
+          return _formatTimestamp(timestamp);
+        }
+      }
+      
+      return 'Récemment';
+    } catch (e) {
+      print('⚠️ Erreur de parsing timestamp pour l\'appel: $e');
+      return 'Récemment';
     }
+  }
+
+  String _getCallInitials(Map<String, dynamic> call) {
+    final name = call['name']?.toString() ?? 
+                 call['caller_name']?.toString() ?? 
+                 call['recipient_name']?.toString() ?? 
+                 '';
+    
+    if (name.isEmpty) {
+      return 'U';
+    }
+    
+    final parts = name.split(' ').where((n) => n.isNotEmpty).take(2);
+    if (parts.isEmpty) {
+      return name.isNotEmpty ? name[0].toUpperCase() : 'U';
+    }
+    
+    return parts.map((n) => n[0].toUpperCase()).join('');
   }
 
   IconData _getCallIcon(String type, String callType) {
@@ -121,56 +220,127 @@ class _CallsPageState extends State<CallsPage> {
     }
   }
 
-  void _onCallTap(Map<String, dynamic> contact, String callType) {
-    Get.snackbar(
-      'Appel',
-      'Appel ${callType == 'video' ? 'vidéo' : 'audio'} vers ${contact['name']}',
-      snackPosition: SnackPosition.TOP,
-    );
+  Future<void> _onCallTap(Map<String, dynamic> contact, String callType) async {
+    try {
+      final recipientId = contact['id']?.toString() ?? '';
+      if (recipientId.isEmpty) {
+        CommonWidgets.showSafeSnackbar(
+          title: 'Erreur',
+          message: 'ID utilisateur invalide',
+          backgroundColor: AppTheme.errorColor,
+        );
+        return;
+      }
+      
+      await _appController.startCall(recipientId, callType);
+    } catch (e) {
+      print('❌ Erreur lors de l\'appel: $e');
+      CommonWidgets.showSafeSnackbar(
+        title: 'Erreur',
+        message: 'Impossible de démarrer l\'appel: ${e.toString()}',
+        backgroundColor: AppTheme.errorColor,
+      );
+    }
   }
 
-  void _onRecentCallTap(Map<String, dynamic> call) {
-    Get.snackbar(
-      'Appel récent',
-      'Rappeler ${call['name']}',
-      snackPosition: SnackPosition.TOP,
-    );
+  Future<void> _onRecentCallTap(Map<String, dynamic> call) async {
+    try {
+      // Extraire l'ID du destinataire depuis l'appel
+      final recipientId = call['recipient_id']?.toString() ?? 
+                         call['recipientId']?.toString() ?? 
+                         call['caller_id']?.toString() ?? 
+                         call['callerId']?.toString() ?? '';
+      
+      if (recipientId.isEmpty) {
+        CommonWidgets.showSafeSnackbar(
+          title: 'Erreur',
+          message: 'Impossible de trouver l\'utilisateur',
+          backgroundColor: AppTheme.errorColor,
+        );
+        return;
+      }
+      
+      final callType = call['call_type']?.toString() ?? 
+                       call['callType']?.toString() ?? 
+                       'audio';
+      
+      await _appController.startCall(recipientId, callType);
+    } catch (e) {
+      print('❌ Erreur lors du rappel: $e');
+      CommonWidgets.showSafeSnackbar(
+        title: 'Erreur',
+        message: 'Impossible de rappeler: ${e.toString()}',
+        backgroundColor: AppTheme.errorColor,
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
-      appBar: AppBar(
-        title: const Text('Appels'),
-        actions: [
+    final appBar = AdaptiveWidgets.adaptiveAppBar(
+      title: 'Appels',
+      actions: [
+        if (PlatformUtils.isIOS)
+          CupertinoButton(
+            padding: EdgeInsets.zero,
+            onPressed: () {
+              CommonWidgets.showSafeSnackbar(
+                title: 'Recherche',
+                message: 'Recherche à implémenter',
+                backgroundColor: AppTheme.primaryColor,
+              );
+            },
+            child: const Icon(CupertinoIcons.search),
+          )
+        else
           IconButton(
             icon: const Icon(Icons.search),
             onPressed: () {
-              Get.snackbar(
-                'Fonctionnalité',
-                'Recherche à implémenter',
-                snackPosition: SnackPosition.TOP,
+              CommonWidgets.showSafeSnackbar(
+                title: 'Recherche',
+                message: 'Recherche à implémenter',
+                backgroundColor: AppTheme.primaryColor,
               );
             },
           ),
+        if (PlatformUtils.isIOS)
+          CupertinoButton(
+            padding: EdgeInsets.zero,
+            onPressed: () {
+              CommonWidgets.showSafeSnackbar(
+                title: 'Menu',
+                message: 'Menu à implémenter',
+                backgroundColor: AppTheme.primaryColor,
+              );
+            },
+            child: const Icon(CupertinoIcons.ellipsis),
+          )
+        else
           IconButton(
             icon: const Icon(Icons.more_vert),
             onPressed: () {
-              Get.snackbar(
-                'Fonctionnalité',
-                'Menu à implémenter',
-                snackPosition: SnackPosition.TOP,
+              CommonWidgets.showSafeSnackbar(
+                title: 'Menu',
+                message: 'Menu à implémenter',
+                backgroundColor: AppTheme.primaryColor,
               );
             },
           ),
-        ],
-      ),
+      ],
+    );
+    
+    return AdaptiveWidgets.adaptiveScaffold(
+      appBar: appBar,
+      backgroundColor: PlatformUtils.isIOS 
+          ? CupertinoColors.systemBackground 
+          : AppTheme.backgroundColor,
       body: Column(
         children: [
-          // Onglets
+          // Onglets adaptatifs
           Container(
-            color: AppTheme.surfaceColor,
+            color: PlatformUtils.isIOS 
+                ? CupertinoColors.systemGrey6 
+                : AppTheme.surfaceColor,
             child: Row(
               children: [
                 Expanded(
@@ -185,7 +355,13 @@ class _CallsPageState extends State<CallsPage> {
           
           // Contenu
           Expanded(
-            child: _selectedIndex == 0 ? _buildRecentCalls() : _buildContacts(),
+            child: _isLoading
+                ? Center(
+                    child: PlatformUtils.isIOS
+                        ? const CupertinoActivityIndicator()
+                        : const CircularProgressIndicator(),
+                  )
+                : _selectedIndex == 0 ? _buildRecentCalls() : _buildContacts(),
           ),
         ],
       ),
@@ -194,6 +370,13 @@ class _CallsPageState extends State<CallsPage> {
 
   Widget _buildTabButton(String title, int index) {
     final isSelected = _selectedIndex == index;
+    final selectedColor = PlatformUtils.isIOS 
+        ? CupertinoColors.activeBlue 
+        : AppTheme.primaryColor;
+    final unselectedColor = PlatformUtils.isIOS 
+        ? CupertinoColors.secondaryLabel 
+        : AppTheme.textSecondaryColor;
+    
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -205,7 +388,7 @@ class _CallsPageState extends State<CallsPage> {
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(
-              color: isSelected ? AppTheme.primaryColor : Colors.transparent,
+              color: isSelected ? selectedColor : Colors.transparent,
               width: 2,
             ),
           ),
@@ -214,7 +397,7 @@ class _CallsPageState extends State<CallsPage> {
           title,
           textAlign: TextAlign.center,
           style: TextStyle(
-            color: isSelected ? AppTheme.primaryColor : AppTheme.textSecondaryColor,
+            color: isSelected ? selectedColor : unselectedColor,
             fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
           ),
         ),
@@ -223,19 +406,36 @@ class _CallsPageState extends State<CallsPage> {
   }
 
   Widget _buildRecentCalls() {
+    final calls = _recentCalls.isNotEmpty ? _recentCalls : _dummyCalls;
+    
+    if (calls.isEmpty) {
+      return Center(
+        child: Text(
+          'Aucun appel récent',
+          style: TextStyle(
+            color: PlatformUtils.isIOS
+                ? CupertinoColors.secondaryLabel
+                : AppTheme.textSecondaryColor,
+          ),
+        ),
+      );
+    }
+    
     return ListView.builder(
-      itemCount: _recentCalls.length,
+      itemCount: calls.length,
       itemBuilder: (context, index) {
-        final call = _recentCalls[index];
-        return ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        final call = calls[index];
+        return AdaptiveWidgets.adaptiveListTile(
           leading: CommonWidgets.avatar(
-            imageUrl: call['avatar'],
-            initials: call['name'].split(' ').take(2).map((n) => n[0]).join(''),
+            imageUrl: call['avatar']?.toString() ?? call['avatar_url']?.toString(),
+            initials: _getCallInitials(call),
             size: 50,
           ),
           title: Text(
-            call['name'],
+            call['name']?.toString() ?? 
+            call['caller_name']?.toString() ?? 
+            call['recipient_name']?.toString() ?? 
+            'Utilisateur',
             style: const TextStyle(
               fontWeight: FontWeight.w600,
               fontSize: 16,
@@ -248,23 +448,38 @@ class _CallsPageState extends State<CallsPage> {
               Row(
                 children: [
                   Icon(
-                    _getCallIcon(call['type'], call['callType']),
+                    _getCallIcon(
+                      call['type']?.toString() ?? call['call_type']?.toString() ?? 'outgoing',
+                      call['callType']?.toString() ?? call['call_type']?.toString() ?? 'audio',
+                    ),
                     size: 16,
-                    color: _getCallColor(call['type'], call['status']),
+                    color: _getCallColor(
+                      call['type']?.toString() ?? call['call_type']?.toString() ?? 'outgoing',
+                      call['status']?.toString() ?? 'completed',
+                    ),
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    call['status'] == 'missed' ? 'Appel manqué' : call['duration'],
+                    (call['status']?.toString() ?? 'completed') == 'missed' 
+                        ? 'Appel manqué' 
+                        : call['duration']?.toString() ?? 
+                          call['duration_seconds']?.toString() ?? 
+                          '00:00',
                     style: TextStyle(
-                      color: _getCallColor(call['type'], call['status']),
+                      color: _getCallColor(
+                        call['type']?.toString() ?? call['call_type']?.toString() ?? 'outgoing',
+                        call['status']?.toString() ?? 'completed',
+                      ),
                       fontSize: 14,
                     ),
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    _formatTimestamp(call['timestamp']),
+                    _formatCallTimestamp(call),
                     style: TextStyle(
-                      color: AppTheme.textSecondaryColor,
+                      color: PlatformUtils.isIOS 
+                          ? CupertinoColors.secondaryLabel 
+                          : AppTheme.textSecondaryColor,
                       fontSize: 12,
                     ),
                   ),
@@ -272,18 +487,27 @@ class _CallsPageState extends State<CallsPage> {
               ),
             ],
           ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                icon: Icon(
-                  call['callType'] == 'video' ? Icons.videocam : Icons.call,
-                  color: AppTheme.primaryColor,
+          trailing: PlatformUtils.isIOS
+              ? CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  minSize: 0,
+                  onPressed: () => _onRecentCallTap(call),
+                  child: Icon(
+                    (call['callType']?.toString() ?? call['call_type']?.toString() ?? 'audio') == 'video'
+                        ? CupertinoIcons.videocam 
+                        : CupertinoIcons.phone,
+                    color: CupertinoColors.activeBlue,
+                  ),
+                )
+              : IconButton(
+                  icon: Icon(
+                    (call['callType']?.toString() ?? call['call_type']?.toString() ?? 'audio') == 'video' 
+                        ? Icons.videocam 
+                        : Icons.call,
+                    color: AppTheme.primaryColor,
+                  ),
+                  onPressed: () => _onRecentCallTap(call),
                 ),
-                onPressed: () => _onRecentCallTap(call),
-              ),
-            ],
-          ),
           onTap: () => _onRecentCallTap(call),
         );
       },
@@ -291,12 +515,26 @@ class _CallsPageState extends State<CallsPage> {
   }
 
   Widget _buildContacts() {
+    final contacts = _contacts.isNotEmpty ? _contacts : _dummyContacts;
+    
+    if (contacts.isEmpty) {
+      return Center(
+        child: Text(
+          'Aucun contact',
+          style: TextStyle(
+            color: PlatformUtils.isIOS
+                ? CupertinoColors.secondaryLabel
+                : AppTheme.textSecondaryColor,
+          ),
+        ),
+      );
+    }
+    
     return ListView.builder(
-      itemCount: _contacts.length,
+      itemCount: contacts.length,
       itemBuilder: (context, index) {
-        final contact = _contacts[index];
-        return ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        final contact = contacts[index];
+        return AdaptiveWidgets.adaptiveListTile(
           leading: Stack(
             children: [
               CommonWidgets.avatar(
@@ -315,7 +553,9 @@ class _CallsPageState extends State<CallsPage> {
                       color: AppTheme.successColor,
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: AppTheme.surfaceColor,
+                        color: PlatformUtils.isIOS 
+                            ? CupertinoColors.systemBackground 
+                            : AppTheme.surfaceColor,
                         width: 2,
                       ),
                     ),
@@ -331,23 +571,47 @@ class _CallsPageState extends State<CallsPage> {
             ),
           ),
           subtitle: Text(
-            contact['phone'],
+            contact['phone']?.toString() ?? contact['email']?.toString() ?? '',
             style: TextStyle(
-              color: AppTheme.textSecondaryColor,
+              color: PlatformUtils.isIOS 
+                  ? CupertinoColors.secondaryLabel 
+                  : AppTheme.textSecondaryColor,
               fontSize: 14,
             ),
           ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              IconButton(
-                icon: const Icon(Icons.call, color: AppTheme.primaryColor),
-                onPressed: () => _onCallTap(contact, 'audio'),
-              ),
-              IconButton(
-                icon: const Icon(Icons.videocam, color: AppTheme.primaryColor),
-                onPressed: () => _onCallTap(contact, 'video'),
-              ),
+              if (PlatformUtils.isIOS)
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  minSize: 0,
+                  onPressed: () => _onCallTap(contact, 'audio'),
+                  child: const Icon(
+                    CupertinoIcons.phone,
+                    color: CupertinoColors.activeBlue,
+                  ),
+                )
+              else
+                IconButton(
+                  icon: const Icon(Icons.call, color: AppTheme.primaryColor),
+                  onPressed: () => _onCallTap(contact, 'audio'),
+                ),
+              if (PlatformUtils.isIOS)
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  minSize: 0,
+                  onPressed: () => _onCallTap(contact, 'video'),
+                  child: const Icon(
+                    CupertinoIcons.videocam,
+                    color: CupertinoColors.activeBlue,
+                  ),
+                )
+              else
+                IconButton(
+                  icon: const Icon(Icons.videocam, color: AppTheme.primaryColor),
+                  onPressed: () => _onCallTap(contact, 'video'),
+                ),
             ],
           ),
         );

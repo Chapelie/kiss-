@@ -1,0 +1,42 @@
+# Docker Compose file
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kisse-postgres
+    environment:
+      POSTGRES_USER: kisse
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: kisse
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kisse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kisse-backend
+    environment:
+      SERVER_ADDRESS: 0.0.0.0:8080
+      DATABASE_URL: postgresql://kisse:password@postgres:5432/kisse
+      JWT_SECRET: your-secret-key-change-in-production
+      JWT_EXPIRATION: 3600
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Pas besoin de volume mount pour migrations - elles sont déjà dans l'image
+    # Les migrations sont copiées dans l'image Docker au moment du build
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+

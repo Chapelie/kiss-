@@ -1,7 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
 import '../../../core/widgets/common_widgets.dart';
+import '../../../core/widgets/adaptive_widgets.dart';
+import '../../../core/utils/platform_utils.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/services/api_service.dart';
+import '../../../core/controllers/app_controller.dart';
 
 class ContactsPage extends StatefulWidget {
   const ContactsPage({super.key});
@@ -12,82 +18,16 @@ class ContactsPage extends StatefulWidget {
 
 class _ContactsPageState extends State<ContactsPage> {
   final TextEditingController _searchController = TextEditingController();
-  final List<ContactData> _contacts = [
-    ContactData(
-      id: '1',
-      name: 'Alice Martin',
-      email: 'alice.martin@email.com',
-      phone: '+33 6 12 34 56 78',
-      avatar: null,
-      initials: 'AM',
-      status: ContactStatus.online,
-      lastSeen: DateTime.now(),
-      isFavorite: true,
-    ),
-    ContactData(
-      id: '2',
-      name: 'Bob Dupont',
-      email: 'bob.dupont@email.com',
-      phone: '+33 6 23 45 67 89',
-      avatar: null,
-      initials: 'BD',
-      status: ContactStatus.offline,
-      lastSeen: DateTime.now().subtract(const Duration(hours: 2)),
-      isFavorite: false,
-    ),
-    ContactData(
-      id: '3',
-      name: 'Claire Bernard',
-      email: 'claire.bernard@email.com',
-      phone: '+33 6 34 56 78 90',
-      avatar: null,
-      initials: 'CB',
-      status: ContactStatus.away,
-      lastSeen: DateTime.now().subtract(const Duration(minutes: 30)),
-      isFavorite: true,
-    ),
-    ContactData(
-      id: '4',
-      name: 'David Leroy',
-      email: 'david.leroy@email.com',
-      phone: '+33 6 45 67 89 01',
-      avatar: null,
-      initials: 'DL',
-      status: ContactStatus.online,
-      lastSeen: DateTime.now(),
-      isFavorite: false,
-    ),
-    ContactData(
-      id: '5',
-      name: 'Emma Dubois',
-      email: 'emma.dubois@email.com',
-      phone: '+33 6 56 78 90 12',
-      avatar: null,
-      initials: 'ED',
-      status: ContactStatus.offline,
-      lastSeen: DateTime.now().subtract(const Duration(days: 1)),
-      isFavorite: false,
-    ),
-    ContactData(
-      id: '6',
-      name: 'François Moreau',
-      email: 'francois.moreau@email.com',
-      phone: '+33 6 67 89 01 23',
-      avatar: null,
-      initials: 'FM',
-      status: ContactStatus.online,
-      lastSeen: DateTime.now(),
-      isFavorite: true,
-    ),
-  ];
-
+  final List<ContactData> _contacts = [];
+  bool _isLoading = false;
+  String _currentFilter = 'Tous';
   List<ContactData> _filteredContacts = [];
 
   @override
   void initState() {
     super.initState();
-    _filteredContacts = List.from(_contacts);
-    _searchController.addListener(_filterContacts);
+    _loadContacts();
+    _searchController.addListener(_onSearchChanged);
   }
 
   @override
@@ -95,19 +35,168 @@ class _ContactsPageState extends State<ContactsPage> {
     _searchController.dispose();
     super.dispose();
   }
+  
+  Future<void> _loadContacts({String? searchQuery}) async {
+    setState(() {
+      _isLoading = true;
+    });
+    
+    try {
+      // Si pas de query, charger tous les utilisateurs depuis les conversations
+      // Sinon, faire une recherche
+      List<Map<String, dynamic>> users;
+      
+      if (searchQuery == null || searchQuery.isEmpty) {
+        // Charger depuis les conversations (déjà chargées automatiquement)
+        final conversations = AppController.to.conversations;
+        users = conversations.map((conv) {
+          return {
+            'id': conv.participantId,
+            'name': conv.participantName ?? 'Utilisateur',
+            'email': '', // Pas disponible dans Conversation
+            'username': null,
+            'avatar_url': conv.participantAvatar,
+            'created_at': DateTime.now().toIso8601String(),
+          };
+        }).toList();
+        
+        // Si aucune conversation, charger depuis l'API
+        if (users.isEmpty) {
+          users = await ApiService.instance.searchUsers(
+            query: '', // Query vide = tous les utilisateurs
+            limit: 1000,
+          );
+        }
+      } else {
+        // Recherche avec query
+        users = await ApiService.instance.searchUsers(
+          query: searchQuery,
+          limit: 50,
+        );
+      }
+      
+      setState(() {
+        _contacts.clear();
+        _contacts.addAll(users.map((user) {
+          // Gérer les valeurs null du backend
+          final id = user['id']?.toString() ?? '';
+          if (id.isEmpty) {
+            return null; // Ignorer les utilisateurs sans ID
+          }
+          
+          final username = user['username']?.toString() ?? '';
+          final name = user['name']?.toString() ?? 
+                      (username.isNotEmpty ? username : user['email']?.toString() ?? 'Utilisateur');
+          final email = user['email']?.toString() ?? '';
+          final displayName = name;
+          final avatarUrl = user['avatar_url']?.toString() ?? user['avatarUrl']?.toString();
+          
+          // Générer les initiales
+          final initials = displayName.split(' ').take(2).map((n) => 
+            n.isNotEmpty ? n[0].toUpperCase() : ''
+          ).join('');
+          final displayInitials = initials.isNotEmpty 
+              ? initials 
+              : (username.isNotEmpty 
+                  ? username[0].toUpperCase() 
+                  : (email.isNotEmpty 
+                      ? email[0].toUpperCase() 
+                      : 'U'));
+          
+          // Parser la date de création
+          DateTime lastSeen = DateTime.now();
+          final createdAtStr = user['created_at']?.toString() ?? user['createdAt']?.toString();
+          if (createdAtStr != null && createdAtStr.isNotEmpty) {
+            try {
+              lastSeen = DateTime.parse(createdAtStr);
+            } catch (e) {
+              print('⚠️ Erreur de parsing created_at: $createdAtStr');
+              lastSeen = DateTime.now();
+            }
+          }
+          
+          // Déterminer le statut depuis les conversations
+          ContactStatus status = ContactStatus.offline;
+          final conversations = AppController.to.conversations;
+          final conversation = conversations.firstWhere(
+            (conv) => conv.participantId == id,
+            orElse: () => Conversation(
+              id: '',
+              participantId: id,
+              participantName: displayName,
+              participantAvatar: avatarUrl,
+              lastMessage: null,
+              lastMessageTime: null,
+              unreadCount: 0,
+              participantStatus: 'offline',
+            ),
+          );
+          
+          if (conversation.participantStatus == 'online') {
+            status = ContactStatus.online;
+          } else if (conversation.participantStatus == 'away') {
+            status = ContactStatus.away;
+          }
+          
+          return ContactData(
+            id: id,
+            name: displayName,
+            email: email,
+            username: username.isNotEmpty ? username : null, // Ajouter username
+            phone: '', // Pas de téléphone dans le backend pour l'instant
+            avatar: avatarUrl,
+            initials: displayInitials,
+            status: status,
+            lastSeen: lastSeen,
+            isFavorite: false,
+          );
+        }).whereType<ContactData>().toList());
+        
+        _applyFilters();
+      });
+    } catch (e) {
+      print('❌ Erreur lors du chargement des contacts: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+  
+  void _onSearchChanged() {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) {
+      _loadContacts();
+    } else {
+      _loadContacts(searchQuery: query);
+    }
+  }
 
   void _filterContacts() {
+    _applyFilters();
+  }
+  
+  void _applyFilters() {
     final query = _searchController.text.toLowerCase();
     setState(() {
-      if (query.isEmpty) {
-        _filteredContacts = List.from(_contacts);
-      } else {
-        _filteredContacts = _contacts.where((contact) {
+      var filtered = List<ContactData>.from(_contacts);
+      
+      // Filtre par recherche
+      if (query.isNotEmpty) {
+        filtered = filtered.where((contact) {
           return contact.name.toLowerCase().contains(query) ||
-                 contact.email.toLowerCase().contains(query) ||
-                 contact.phone.contains(query);
+                 contact.email.toLowerCase().contains(query);
         }).toList();
       }
+      
+      // Filtre par statut
+      if (_currentFilter == 'En ligne') {
+        filtered = filtered.where((contact) => contact.status == ContactStatus.online).toList();
+      } else if (_currentFilter == 'Favoris') {
+        filtered = filtered.where((contact) => contact.isFavorite).toList();
+      }
+      
+      _filteredContacts = filtered;
     });
   }
 
@@ -157,13 +246,11 @@ class _ContactsPageState extends State<ContactsPage> {
             child: ListView(
               scrollDirection: Axis.horizontal,
               children: [
-                _buildFilterChip('Tous', true),
+                _buildFilterChip('Tous', _currentFilter == 'Tous'),
                 const SizedBox(width: 8),
-                _buildFilterChip('En ligne', false),
+                _buildFilterChip('En ligne', _currentFilter == 'En ligne'),
                 const SizedBox(width: 8),
-                _buildFilterChip('Favoris', false),
-                const SizedBox(width: 8),
-                _buildFilterChip('Récents', false),
+                _buildFilterChip('Favoris', _currentFilter == 'Favoris'),
               ],
             ),
           ),
@@ -172,15 +259,24 @@ class _ContactsPageState extends State<ContactsPage> {
           
           // Liste des contacts
           Expanded(
-            child: _filteredContacts.isEmpty
-                ? _buildEmptyState()
-                : ListView.builder(
-                    itemCount: _filteredContacts.length,
-                    itemBuilder: (context, index) {
-                      final contact = _filteredContacts[index];
-                      return _buildContactTile(contact);
-                    },
-                  ),
+            child: _isLoading
+                ? Center(
+                    child: AdaptiveWidgets.adaptiveLoadingIndicator(
+                      message: 'Chargement des contacts...',
+                    ),
+                  )
+                : _filteredContacts.isEmpty
+                    ? _buildEmptyState()
+                    : RefreshIndicator(
+                        onRefresh: () => _loadContacts(searchQuery: _searchController.text.trim().isEmpty ? null : _searchController.text.trim()),
+                        child: ListView.builder(
+                          itemCount: _filteredContacts.length,
+                          itemBuilder: (context, index) {
+                            final contact = _filteredContacts[index];
+                            return _buildContactTile(contact);
+                          },
+                        ),
+                      ),
           ),
         ],
       ),
@@ -197,12 +293,10 @@ class _ContactsPageState extends State<ContactsPage> {
       label: Text(label),
       selected: isSelected,
       onSelected: (selected) {
-        // Implémenter la logique de filtrage
-        Get.snackbar(
-          'Filtre',
-          'Filtre "$label" sélectionné',
-          snackPosition: SnackPosition.TOP,
-        );
+        setState(() {
+          _currentFilter = label;
+        });
+        _applyFilters();
       },
       selectedColor: AppTheme.primaryColor.withOpacity(0.2),
       checkmarkColor: AppTheme.primaryColor,
@@ -395,10 +489,49 @@ class _ContactsPageState extends State<ContactsPage> {
   }
 
   void _addContact() {
-    Get.snackbar(
-      'Ajouter un contact',
-      'Fonctionnalité à implémenter',
-      snackPosition: SnackPosition.TOP,
+    // Afficher un dialogue pour rechercher un utilisateur par email ou username
+    showDialog(
+      context: context,
+      builder: (context) => _AddContactDialog(
+        onContactAdded: (contact) async {
+          // Créer automatiquement une conversation avec ce contact
+          try {
+            final conversation = await ApiService.instance.createConversation(contact.id);
+            setState(() {
+              _contacts.add(contact);
+              _applyFilters();
+            });
+            // Naviguer vers la conversation
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            } else {
+              Get.back();
+            }
+            Get.toNamed('/chat/${conversation['id']}', arguments: {
+              'participant_id': contact.id,
+              'participant_name': contact.name,
+              'participant_avatar': contact.avatar,
+            });
+          } catch (e) {
+            print('❌ Erreur lors de la création de la conversation: $e');
+            // Ajouter quand même le contact à la liste
+            setState(() {
+              _contacts.add(contact);
+              _applyFilters();
+            });
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            } else {
+              Get.back();
+            }
+            Get.snackbar(
+              'Contact ajouté',
+              'Le contact a été ajouté mais la conversation n\'a pas pu être créée',
+              snackPosition: SnackPosition.TOP,
+            );
+          }
+        },
+      ),
     );
   }
 
@@ -417,7 +550,9 @@ class _ContactsPageState extends State<ContactsPage> {
               leading: const Icon(Icons.import_contacts),
               title: const Text('Importer des contacts'),
               onTap: () {
-                Get.back();
+                if (Get.isDialogOpen == true) {
+                  Get.back();
+                }
                 Get.snackbar('Import', 'Import des contacts');
               },
             ),
@@ -425,7 +560,9 @@ class _ContactsPageState extends State<ContactsPage> {
               leading: const Icon(Icons.group_add),
               title: const Text('Créer un groupe'),
               onTap: () {
-                Get.back();
+                if (Get.isDialogOpen == true) {
+                  Get.back();
+                }
                 Get.snackbar('Groupe', 'Création de groupe');
               },
             ),
@@ -433,14 +570,20 @@ class _ContactsPageState extends State<ContactsPage> {
               leading: const Icon(Icons.sort),
               title: const Text('Trier les contacts'),
               onTap: () {
-                Get.back();
+                if (Get.isDialogOpen == true) {
+                  Get.back();
+                }
                 Get.snackbar('Tri', 'Tri des contacts');
               },
             ),
             ListTile(
               leading: const Icon(Icons.close),
               title: const Text('Fermer'),
-              onTap: () => Get.back(),
+              onTap: () {
+                if (Get.isDialogOpen == true) {
+                  Get.back();
+                }
+              },
             ),
           ],
         ),
@@ -449,11 +592,17 @@ class _ContactsPageState extends State<ContactsPage> {
   }
 
   void _startNewConversation() {
-    Get.snackbar(
-      'Nouvelle conversation',
-      'Fonctionnalité à implémenter',
-      snackPosition: SnackPosition.TOP,
-    );
+    // Navigation vers la page de contacts pour sélectionner un contact
+    _addContact();
+  }
+  
+  void _startConversationWithContact(ContactData contact) {
+    // Créer ou ouvrir une conversation avec ce contact
+    Get.toNamed('/chat/${contact.id}', arguments: {
+      'participant_id': contact.id,
+      'participant_name': contact.name,
+      'participant_avatar': contact.avatar,
+    });
   }
 
   void _showContactDetails(ContactData contact) {
@@ -463,37 +612,27 @@ class _ContactsPageState extends State<ContactsPage> {
   void _handleContactAction(String action, ContactData contact) {
     switch (action) {
       case 'message':
-        Get.snackbar(
-          'Message',
-          'Démarrer une conversation avec ${contact.name}',
-          snackPosition: SnackPosition.TOP,
-        );
+        // Démarrer une conversation avec ce contact
+        _startConversationWithContact(contact);
         break;
       case 'call':
-        Get.snackbar(
-          'Appel',
-          'Appeler ${contact.name}',
-          snackPosition: SnackPosition.TOP,
-        );
+        // Démarrer un appel audio
+        AppController.to.startCall(contact.id, 'audio');
+        if (Get.isDialogOpen == true) {
+          Get.back(); // Retourner à la page précédente
+        }
         break;
       case 'video_call':
-        Get.snackbar(
-          'Appel vidéo',
-          'Appel vidéo avec ${contact.name}',
-          snackPosition: SnackPosition.TOP,
-        );
+        // Démarrer un appel vidéo
+        AppController.to.startCall(contact.id, 'video');
+        if (Get.isDialogOpen == true) {
+          Get.back(); // Retourner à la page précédente
+        }
         break;
       case 'favorite':
         setState(() {
           contact.isFavorite = !contact.isFavorite;
         });
-        Get.snackbar(
-          'Favori',
-          contact.isFavorite 
-              ? '${contact.name} ajouté aux favoris'
-              : '${contact.name} retiré des favoris',
-          snackPosition: SnackPosition.TOP,
-        );
         break;
       case 'block':
         Get.dialog(
@@ -502,17 +641,19 @@ class _ContactsPageState extends State<ContactsPage> {
             content: Text('Êtes-vous sûr de vouloir bloquer ${contact.name} ?'),
             actions: [
               TextButton(
-                onPressed: () => Get.back(),
+                onPressed: () {
+                  if (Get.isDialogOpen == true) {
+                    Get.back();
+                  }
+                },
                 child: const Text('Annuler'),
               ),
               TextButton(
                 onPressed: () {
-                  Get.back();
-                  Get.snackbar(
-                    'Contact bloqué',
-                    '${contact.name} a été bloqué',
-                    snackPosition: SnackPosition.TOP,
-                  );
+                  if (Get.isDialogOpen == true) {
+                    Get.back();
+                  }
+                  // TODO: Implémenter le blocage côté backend
                 },
                 child: const Text('Bloquer'),
               ),
@@ -719,27 +860,25 @@ class ContactDetailsPage extends StatelessWidget {
   }
 
   void _sendMessage() {
-    Get.snackbar(
-      'Message',
-      'Démarrer une conversation avec ${contact.name}',
-      snackPosition: SnackPosition.TOP,
-    );
+    // Ouvrir la conversation avec ce contact
+    Get.back(); // Fermer la page de détails
+    Get.toNamed('/chat/${contact.id}', arguments: {
+      'participant_id': contact.id,
+      'participant_name': contact.name,
+      'participant_avatar': contact.avatar,
+    });
   }
 
   void _makeCall() {
-    Get.snackbar(
-      'Appel',
-      'Appeler ${contact.name}',
-      snackPosition: SnackPosition.TOP,
-    );
+    // Démarrer un appel audio
+    Get.back(); // Fermer la page de détails
+    AppController.to.startCall(contact.id, 'audio');
   }
 
   void _makeVideoCall() {
-    Get.snackbar(
-      'Appel vidéo',
-      'Appel vidéo avec ${contact.name}',
-      snackPosition: SnackPosition.TOP,
-    );
+    // Démarrer un appel vidéo
+    Get.back(); // Fermer la page de détails
+    AppController.to.startCall(contact.id, 'video');
   }
 
   void _shareContact() {
@@ -757,12 +896,18 @@ class ContactDetailsPage extends StatelessWidget {
         content: Text('Êtes-vous sûr de vouloir bloquer ${contact.name} ?'),
         actions: [
           TextButton(
-            onPressed: () => Get.back(),
+            onPressed: () {
+              if (Get.isDialogOpen == true) {
+                Get.back();
+              }
+            },
             child: const Text('Annuler'),
           ),
           TextButton(
             onPressed: () {
-              Get.back();
+              if (Get.isDialogOpen == true) {
+                Get.back();
+              }
               Get.snackbar(
                 'Contact bloqué',
                 '${contact.name} a été bloqué',
@@ -781,6 +926,7 @@ class ContactData {
   final String id;
   final String name;
   final String email;
+  final String? username; // Ajout du champ username
   final String phone;
   final String? avatar;
   final String initials;
@@ -792,6 +938,7 @@ class ContactData {
     required this.id,
     required this.name,
     required this.email,
+    this.username, // Optionnel car peut être null
     required this.phone,
     this.avatar,
     required this.initials,
@@ -801,4 +948,247 @@ class ContactData {
   });
 }
 
-enum ContactStatus { online, away, offline } 
+enum ContactStatus { online, away, offline }
+
+// Dialogue pour ajouter un contact
+class _AddContactDialog extends StatefulWidget {
+  final Function(ContactData) onContactAdded;
+  
+  const _AddContactDialog({required this.onContactAdded});
+  
+  @override
+  State<_AddContactDialog> createState() => _AddContactDialogState();
+}
+
+class _AddContactDialogState extends State<_AddContactDialog> {
+  final TextEditingController _searchController = TextEditingController();
+  List<Map<String, dynamic>> _searchResults = [];
+  bool _isSearching = false;
+  Timer? _debounceTimer;
+  
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(_onSearchChanged);
+  }
+  
+  @override
+  void dispose() {
+    _debounceTimer?.cancel();
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    super.dispose();
+  }
+  
+  void _onSearchChanged() {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+      _searchUsers();
+    });
+  }
+  
+  Future<void> _searchUsers() async {
+    final query = _searchController.text.trim();
+    print('🔍 Recherche dans le modal - Query: "$query"');
+    
+    if (query.isEmpty) {
+      setState(() {
+        _searchResults = [];
+      });
+      return;
+    }
+    
+    if (!mounted) return;
+    
+    setState(() {
+      _isSearching = true;
+    });
+    
+    try {
+      // Si c'est un email, chercher directement par email
+      if (GetUtils.isEmail(query)) {
+        print('🔍 Détection d\'un email, utilisation de findUserByEmail');
+        final user = await ApiService.instance.findUserByEmail(query);
+        print('🔍 Résultat findUserByEmail: ${user != null ? "trouvé" : "non trouvé"}');
+        if (user != null) {
+          print('🔍 Utilisateur trouvé: ${user['email']} / ${user['username']}');
+        }
+        if (mounted) {
+          setState(() {
+            _searchResults = user != null ? [user] : [];
+          });
+          print('🔍 Résultats mis à jour: ${_searchResults.length} utilisateur(s)');
+        }
+      } else {
+        // Sinon, faire une recherche normale
+        print('🔍 Recherche par username/nom, utilisation de searchUsers');
+        final users = await ApiService.instance.searchUsers(query: query, limit: 10);
+        print('🔍 Résultat searchUsers: ${users.length} utilisateur(s) trouvé(s)');
+        if (users.isNotEmpty) {
+          print('🔍 Premiers résultats:');
+          for (var i = 0; i < users.length && i < 3; i++) {
+            print('   - ${users[i]['email']} / ${users[i]['username']}');
+          }
+        }
+        if (mounted) {
+          setState(() {
+            _searchResults = users;
+          });
+          print('🔍 Résultats mis à jour: ${_searchResults.length} utilisateur(s)');
+        }
+      }
+    } catch (e, stackTrace) {
+      print('❌ Erreur lors de la recherche: $e');
+      print('   Stack trace: $stackTrace');
+      if (mounted) {
+        setState(() {
+          _searchResults = [];
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSearching = false;
+        });
+      }
+    }
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Ajouter un contact'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CommonWidgets.customTextField(
+              controller: _searchController,
+              label: 'Email ou nom d\'utilisateur',
+              hint: 'Entrez un email ou un nom d\'utilisateur...',
+              prefixIcon: const Icon(Icons.search),
+              keyboardType: TextInputType.emailAddress,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Entrez l\'email d\'une personne pour vérifier si elle est sur Kisse',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppTheme.textSecondaryColor,
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (_isSearching)
+              const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: CircularProgressIndicator(),
+              )
+            else if (_searchResults.isEmpty && _searchController.text.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    const Icon(Icons.person_off, size: 48, color: AppTheme.textSecondaryColor),
+                    const SizedBox(height: 8),
+                    Text(
+                      GetUtils.isEmail(_searchController.text.trim())
+                          ? 'Aucun utilisateur trouvé avec cet email'
+                          : 'Aucun résultat trouvé',
+                      style: TextStyle(color: AppTheme.textSecondaryColor),
+                    ),
+                    if (GetUtils.isEmail(_searchController.text.trim()))
+                      const SizedBox(height: 4),
+                    if (GetUtils.isEmail(_searchController.text.trim()))
+                      Text(
+                        'Cette personne n\'est pas encore sur Kisse',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textSecondaryColor,
+                        ),
+                      ),
+                  ],
+                ),
+              )
+            else
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _searchResults.length,
+                  itemBuilder: (context, index) {
+                    final user = _searchResults[index];
+                    // Gérer les valeurs null du backend
+                    final id = user['id']?.toString() ?? '';
+                    if (id.isEmpty) {
+                      return const SizedBox.shrink(); // Ignorer les utilisateurs sans ID
+                    }
+                    
+                    final username = user['username']?.toString() ?? '';
+                    final name = user['name']?.toString() ?? 
+                                (username.isNotEmpty ? username : user['email']?.toString() ?? 'Utilisateur');
+                    final email = user['email']?.toString() ?? '';
+                    final displayName = name;
+                    final avatarUrl = user['avatar_url']?.toString() ?? user['avatarUrl']?.toString();
+                    
+                    // Générer les initiales
+                    final initials = displayName.split(' ').take(2).map((n) => 
+                      n.isNotEmpty ? n[0].toUpperCase() : ''
+                    ).join('');
+                    final displayInitials = initials.isNotEmpty 
+                        ? initials 
+                        : (username.isNotEmpty 
+                            ? username[0].toUpperCase() 
+                            : (email.isNotEmpty 
+                                ? email[0].toUpperCase() 
+                                : 'U'));
+                    
+                    return ListTile(
+                      leading: CommonWidgets.avatar(
+                        imageUrl: avatarUrl,
+                        initials: displayInitials,
+                        size: 40,
+                      ),
+                      title: Text(displayName),
+                      subtitle: Text(username.isNotEmpty ? '@$username' : (email.isNotEmpty ? email : '')),
+                      onTap: () {
+                        final contact = ContactData(
+                          id: id,
+                          name: displayName,
+                          email: email,
+                          username: username.isNotEmpty ? username : null, // Ajouter username
+                          phone: '',
+                          avatar: avatarUrl,
+                          initials: displayInitials,
+                          status: ContactStatus.offline,
+                          lastSeen: DateTime.now(),
+                          isFavorite: false,
+                        );
+                        widget.onContactAdded(contact);
+                        if (Navigator.canPop(context)) {
+                          Navigator.pop(context);
+                        } else if (Get.isDialogOpen == true) {
+                          Get.back();
+                        }
+                      },
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            } else {
+              Get.back();
+            }
+          },
+          child: const Text('Annuler'),
+        ),
+      ],
+    );
+  }
+} 

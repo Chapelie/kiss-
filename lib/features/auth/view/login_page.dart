@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
 import '../../../core/widgets/common_widgets.dart';
+import '../../../core/widgets/adaptive_widgets.dart';
+import '../../../core/utils/platform_utils.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/controllers/app_controller.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -17,12 +21,6 @@ class _LoginPageState extends State<LoginPage> {
   bool _isLoading = false;
   bool _obscurePassword = true;
 
-  // Données fictives pour les tests
-  final Map<String, String> _testUsers = {
-    'admin@kisse.com': 'password123',
-    'user@kisse.com': 'password123',
-    'test@kisse.com': 'password123',
-  };
 
   @override
   void dispose() {
@@ -38,34 +36,48 @@ class _LoginPageState extends State<LoginPage> {
       _isLoading = true;
     });
 
-    // Simulation d'un délai de connexion
-    await Future.delayed(const Duration(seconds: 2));
-
     final email = _emailController.text.trim();
     final password = _passwordController.text;
 
-    // Vérification avec les données fictives
-    if (_testUsers.containsKey(email) && _testUsers[email] == password) {
-      // Connexion réussie
-      Get.snackbar(
-        'Connexion réussie',
-        'Bienvenue sur Kisse !',
-        backgroundColor: AppTheme.successColor,
-        colorText: Colors.white,
-        snackPosition: SnackPosition.TOP,
-      );
+    try {
+      // Connexion via l'API
+      final success = await AppController.to.login(email, password);
       
-      // Navigation vers la page principale
-      Get.offAllNamed('/home');
-    } else {
-      // Échec de connexion
-      Get.snackbar(
-        'Erreur de connexion',
-        'Email ou mot de passe incorrect',
-        backgroundColor: AppTheme.errorColor,
-        colorText: Colors.white,
-        snackPosition: SnackPosition.TOP,
-      );
+      if (success) {
+        // Navigation vers la page principale
+        Get.offAllNamed('/home');
+        
+        // Ne pas afficher de snackbar après navigation pour éviter l'erreur Overlay
+        // La navigation elle-même indique le succès
+      } else {
+        // Échec de connexion
+        if (mounted) {
+          _showError('Email ou mot de passe incorrect');
+        }
+      }
+    } catch (e) {
+      // Gérer les erreurs de connexion
+      if (mounted) {
+        String errorMessage = 'Erreur de connexion';
+        final errorStr = e.toString();
+        
+        if (errorStr.contains('Connection refused') || 
+            errorStr.contains('SocketException') ||
+            errorStr.contains('Failed host lookup')) {
+          errorMessage = 'Impossible de se connecter au serveur.\nVérifiez que le backend est démarré sur http://10.0.2.2:8080';
+        } else if (errorStr.contains('timeout') || errorStr.contains('TimeoutException')) {
+          errorMessage = 'Délai d\'attente dépassé.\nVérifiez votre connexion réseau.';
+        } else if (errorStr.contains('401') || errorStr.contains('UNAUTHORIZED')) {
+          errorMessage = 'Email ou mot de passe incorrect';
+        } else if (errorStr.contains('500') || errorStr.contains('INTERNAL_SERVER_ERROR')) {
+          errorMessage = 'Erreur serveur.\nVeuillez réessayer plus tard.';
+        } else if (errorStr.contains('Network')) {
+          errorMessage = 'Erreur réseau.\nVérifiez votre connexion internet.';
+        }
+        
+        print('❌ Erreur de connexion: $e');
+        _showError(errorMessage);
+      }
     }
 
     setState(() {
@@ -75,16 +87,18 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+    final appBar = AdaptiveWidgets.adaptiveAppBar(
+      title: 'Connexion',
+      automaticallyImplyLeading: false,
+    );
+    
+    final content = SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
                 const SizedBox(height: 60),
                 
                 // Logo et titre
@@ -95,11 +109,15 @@ class _LoginPageState extends State<LoginPage> {
                         width: 120,
                         height: 120,
                         decoration: BoxDecoration(
-                          color: AppTheme.primaryColor,
+                          color: PlatformUtils.isIOS 
+                              ? CupertinoColors.activeBlue 
+                              : AppTheme.primaryColor,
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(
-                          Icons.chat_bubble_outline,
+                        child: Icon(
+                          PlatformUtils.isIOS 
+                              ? CupertinoIcons.chat_bubble_2_fill
+                              : Icons.chat_bubble_outline,
                           size: 60,
                           color: Colors.white,
                         ),
@@ -108,7 +126,9 @@ class _LoginPageState extends State<LoginPage> {
                       Text(
                         'Kisse',
                         style: Theme.of(context).textTheme.displayMedium?.copyWith(
-                          color: AppTheme.primaryColor,
+                          color: PlatformUtils.isIOS 
+                              ? CupertinoColors.activeBlue 
+                              : AppTheme.primaryColor,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -183,52 +203,12 @@ class _LoginPageState extends State<LoginPage> {
                 
                 const SizedBox(height: 16),
                 
-                // Lien "Mot de passe oublié"
+                  // Lien "Mot de passe oublié"
                 TextButton(
                   onPressed: () {
-                    Get.snackbar(
-                      'Fonctionnalité',
-                      'Récupération de mot de passe à implémenter',
-                      snackPosition: SnackPosition.TOP,
-                    );
+                    _showInfo('Récupération de mot de passe à implémenter');
                   },
                   child: const Text('Mot de passe oublié ?'),
-                ),
-                
-                const SizedBox(height: 40),
-                
-                // Comptes de test
-                CommonWidgets.customCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Comptes de test :',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      ..._testUsers.entries.map((entry) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '${entry.key} / ${entry.value}',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                _emailController.text = entry.key;
-                                _passwordController.text = entry.value;
-                              },
-                              child: const Text('Utiliser'),
-                            ),
-                          ],
-                        ),
-                      )),
-                    ],
-                  ),
                 ),
                 
                 const SizedBox(height: 24),
@@ -243,11 +223,7 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                     TextButton(
                       onPressed: () {
-                        Get.snackbar(
-                          'Fonctionnalité',
-                          'Inscription à implémenter',
-                          snackPosition: SnackPosition.TOP,
-                        );
+                        Get.toNamed('/register');
                       },
                       child: const Text('S\'inscrire'),
                     ),
@@ -255,9 +231,49 @@ class _LoginPageState extends State<LoginPage> {
                 ),
               ],
             ),
-          ),
+
         ),
-      ),
     );
+    
+    return AdaptiveWidgets.adaptiveScaffold(
+      appBar: appBar,
+      body: SafeArea(child: content),
+      backgroundColor: PlatformUtils.isIOS 
+          ? CupertinoColors.systemBackground 
+          : AppTheme.backgroundColor,
+    );
+  }
+  
+  /// Affiche un message d'erreur de manière sécurisée
+  void _showError(String message) {
+    if (!mounted) return;
+    
+    // Utiliser un délai pour s'assurer que le contexte est disponible
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (!mounted) return;
+      CommonWidgets.showSafeSnackbar(
+        title: 'Erreur',
+        message: message,
+        backgroundColor: AppTheme.errorColor,
+        textColor: Colors.white,
+        duration: const Duration(seconds: 4),
+      );
+    });
+  }
+  
+  /// Affiche un message d'information de manière sécurisée
+  void _showInfo(String message) {
+    if (!mounted) return;
+    
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (!mounted) return;
+      CommonWidgets.showSafeSnackbar(
+        title: 'Information',
+        message: message,
+        backgroundColor: AppTheme.primaryColor,
+        textColor: Colors.white,
+        duration: const Duration(seconds: 3),
+      );
+    });
   }
 } 

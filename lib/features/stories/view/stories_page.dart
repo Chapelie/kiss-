@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
 import '../../../core/widgets/common_widgets.dart';
+import '../../../core/widgets/adaptive_widgets.dart';
+import '../../../core/utils/platform_utils.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/services/api_service.dart';
 
 class StoriesPage extends StatefulWidget {
   const StoriesPage({super.key});
@@ -11,96 +15,140 @@ class StoriesPage extends StatefulWidget {
 }
 
 class _StoriesPageState extends State<StoriesPage> {
-  final List<StoryData> _stories = [
-    StoryData(
-      id: '1',
-      userId: 'user1',
-      userName: 'Alice Martin',
-      userAvatar: null,
-      userInitials: 'AM',
-      content: 'Story content 1',
-      mediaUrl: 'https://picsum.photos/300/400',
-      mediaType: MediaType.image,
-      createdAt: DateTime.now().subtract(const Duration(hours: 2)),
-      expiresAt: DateTime.now().add(const Duration(hours: 22)),
-      isViewed: false,
-    ),
-    StoryData(
-      id: '2',
-      userId: 'user2',
-      userName: 'Bob Dupont',
-      userAvatar: null,
-      userInitials: 'BD',
-      content: 'Story content 2',
-      mediaUrl: 'https://picsum.photos/300/400',
-      mediaType: MediaType.image,
-      createdAt: DateTime.now().subtract(const Duration(hours: 1)),
-      expiresAt: DateTime.now().add(const Duration(hours: 23)),
-      isViewed: true,
-    ),
-    StoryData(
-      id: '3',
-      userId: 'user3',
-      userName: 'Claire Bernard',
-      userAvatar: null,
-      userInitials: 'CB',
-      content: 'Story content 3',
-      mediaUrl: 'https://picsum.photos/300/400',
-      mediaType: MediaType.image,
-      createdAt: DateTime.now().subtract(const Duration(minutes: 30)),
-      expiresAt: DateTime.now().add(const Duration(hours: 23, minutes: 30)),
-      isViewed: false,
-    ),
-  ];
+  final List<StoryData> _stories = [];
+  bool _isLoading = false;
+  
+  @override
+  void initState() {
+    super.initState();
+    _loadStories();
+  }
+  
+  Future<void> _loadStories() async {
+    setState(() {
+      _isLoading = true;
+    });
+    
+    try {
+      final storiesData = await ApiService.instance.getStories(limit: 50);
+      setState(() {
+        _stories.clear();
+        _stories.addAll(
+          storiesData.map((data) => StoryData.fromJson(data)).whereType<StoryData>().toList(),
+        );
+      });
+    } catch (e) {
+      print('❌ Erreur lors du chargement des stories: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
-      appBar: AppBar(
-        title: const Text('Stories'),
-        actions: [
+    final appBar = AdaptiveWidgets.adaptiveAppBar(
+      title: 'Stories',
+      actions: [
+        if (PlatformUtils.isIOS)
+          CupertinoButton(
+            padding: EdgeInsets.zero,
+            onPressed: () => _showCreateStoryDialog(),
+            child: const Icon(CupertinoIcons.add_circled),
+          )
+        else
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () => _showCreateStoryDialog(),
           ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Stories horizontales en haut
-          Container(
-            height: 120,
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _stories.length + 1, // +1 pour le bouton "Ajouter"
-              itemBuilder: (context, index) {
-                if (index == 0) {
-                  return _buildAddStoryButton();
-                }
-                final story = _stories[index - 1];
-                return _buildStoryPreview(story);
-              },
+      ],
+    );
+    
+    return AdaptiveWidgets.adaptiveScaffold(
+      appBar: appBar,
+      backgroundColor: PlatformUtils.isIOS
+          ? CupertinoColors.systemBackground
+          : AppTheme.backgroundColor,
+      body: _isLoading
+          ? Center(
+              child: AdaptiveWidgets.adaptiveLoadingIndicator(
+                message: 'Chargement des stories...',
+              ),
+            )
+          : RefreshIndicator(
+              onRefresh: _loadStories,
+              child: Column(
+                children: [
+                  // Stories horizontales en haut
+                  if (_stories.isNotEmpty)
+                    Container(
+                      height: 120,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: _stories.length + 1, // +1 pour le bouton "Ajouter"
+                        itemBuilder: (context, index) {
+                          if (index == 0) {
+                            return _buildAddStoryButton();
+                          }
+                          final story = _stories[index - 1];
+                          return _buildStoryPreview(story);
+                        },
+                      ),
+                    ),
+                  
+                  if (_stories.isNotEmpty) const Divider(),
+                  
+                  // Liste des stories
+                  Expanded(
+                    child: _stories.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  PlatformUtils.isIOS
+                                      ? CupertinoIcons.photo_on_rectangle
+                                      : Icons.collections_bookmark_outlined,
+                                  size: 80,
+                                  color: AppTheme.textSecondaryColor,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'Aucune story',
+                                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                        color: AppTheme.textSecondaryColor,
+                                      ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Partagez vos moments en stories',
+                                  style: TextStyle(
+                                    color: AppTheme.textSecondaryColor,
+                                  ),
+                                ),
+                                const SizedBox(height: 24),
+                                CommonWidgets.customButton(
+                                  text: 'Créer une Story',
+                                  onPressed: () => _showCreateStoryDialog(),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: _stories.length,
+                            itemBuilder: (context, index) {
+                              final story = _stories[index];
+                              return _buildStoryCard(story);
+                            },
+                          ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          
-          const Divider(),
-          
-          // Liste des stories
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: _stories.length,
-              itemBuilder: (context, index) {
-                final story = _stories[index];
-                return _buildStoryCard(story);
-              },
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -279,25 +327,36 @@ class _StoriesPageState extends State<StoriesPage> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
-                child: story.mediaType == MediaType.image
-                    ? Image.network(
-                        story.mediaUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
+                child: story.mediaUrl != null && story.mediaUrl!.isNotEmpty
+                    ? (story.mediaType == MediaType.image
+                        ? Image.network(
+                            story.mediaUrl!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Container(
+                                color: AppTheme.surfaceColor,
+                                child: Icon(
+                                  Icons.image,
+                                  size: 50,
+                                  color: AppTheme.textSecondaryColor,
+                                ),
+                              );
+                            },
+                          )
+                        : Container(
                             color: AppTheme.surfaceColor,
                             child: Icon(
-                              Icons.image,
+                              Icons.video_library,
                               size: 50,
                               color: AppTheme.textSecondaryColor,
                             ),
-                          );
-                        },
-                      )
+                          ))
                     : Container(
                         color: AppTheme.surfaceColor,
                         child: Icon(
-                          Icons.video_library,
+                          story.mediaType == MediaType.image 
+                              ? Icons.image 
+                              : Icons.video_library,
                           size: 50,
                           color: AppTheme.textSecondaryColor,
                         ),
@@ -335,14 +394,32 @@ class _StoriesPageState extends State<StoriesPage> {
     );
   }
 
-  void _viewStory(StoryData story) {
-    // Marquer comme vu
-    setState(() {
-      story.isViewed = true;
-    });
+  Future<void> _viewStory(StoryData story) async {
+    // Marquer comme vu via l'API
+    try {
+      await ApiService.instance.viewStory(story.id);
+      setState(() {
+        story.isViewed = true;
+      });
+    } catch (e) {
+      print('⚠️ Erreur lors du marquage de la story comme vue: $e');
+      // Marquer quand même localement
+      setState(() {
+        story.isViewed = true;
+      });
+    }
     
     // Naviguer vers la vue plein écran
-    Get.to(() => StoryViewPage(story: story));
+    if (Navigator.canPop(context)) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => StoryViewPage(story: story),
+        ),
+      );
+    } else {
+      Get.to(() => StoryViewPage(story: story));
+    }
   }
 
   void _showCreateStoryDialog() {
@@ -356,7 +433,9 @@ class _StoriesPageState extends State<StoriesPage> {
               leading: const Icon(Icons.photo_camera),
               title: const Text('Prendre une photo'),
               onTap: () {
-                Get.back();
+                if (Get.isDialogOpen ?? false) {
+                  Navigator.of(context).pop();
+                }
                 _createStory(MediaType.image);
               },
             ),
@@ -364,7 +443,9 @@ class _StoriesPageState extends State<StoriesPage> {
               leading: const Icon(Icons.videocam),
               title: const Text('Prendre une vidéo'),
               onTap: () {
-                Get.back();
+                if (Get.isDialogOpen ?? false) {
+                  Navigator.of(context).pop();
+                }
                 _createStory(MediaType.video);
               },
             ),
@@ -372,7 +453,9 @@ class _StoriesPageState extends State<StoriesPage> {
               leading: const Icon(Icons.photo_library),
               title: const Text('Choisir depuis la galerie'),
               onTap: () {
-                Get.back();
+                if (Get.isDialogOpen ?? false) {
+                  Navigator.of(context).pop();
+                }
                 _createStory(MediaType.image);
               },
             ),
@@ -380,7 +463,11 @@ class _StoriesPageState extends State<StoriesPage> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Get.back(),
+            onPressed: () {
+              if (Get.isDialogOpen ?? false) {
+                Navigator.of(context).pop();
+              }
+            },
             child: const Text('Annuler'),
           ),
         ],
@@ -388,13 +475,43 @@ class _StoriesPageState extends State<StoriesPage> {
     );
   }
 
-  void _createStory(MediaType mediaType) {
-    // Simuler la création d'une story
-    Get.snackbar(
-      'Story créée',
-      'Votre story a été créée avec succès',
-      snackPosition: SnackPosition.TOP,
-    );
+  Future<void> _createStory(MediaType mediaType) async {
+    // TODO: Implémenter la sélection de média (image picker, camera, etc.)
+    // Pour l'instant, on simule avec une URL de test
+    final mediaUrl = 'https://picsum.photos/300/400'; // URL de test
+    final mediaTypeStr = mediaType == MediaType.image ? 'image' : 'video';
+    
+    try {
+      final storyData = await ApiService.instance.createStory(
+        mediaUrl: mediaUrl,
+        mediaType: mediaTypeStr,
+      );
+      
+      // Ajouter la story à la liste
+      final newStory = StoryData.fromJson(storyData);
+      if (newStory != null) {
+        setState(() {
+          _stories.insert(0, newStory);
+        });
+        
+        if (mounted) {
+          CommonWidgets.showSafeSnackbar(
+            title: 'Story créée',
+            message: 'Votre story a été créée avec succès',
+            backgroundColor: AppTheme.successColor,
+          );
+        }
+      }
+    } catch (e) {
+      print('❌ Erreur lors de la création de la story: $e');
+      if (mounted) {
+        CommonWidgets.showSafeSnackbar(
+          title: 'Erreur',
+          message: 'Impossible de créer la story. Veuillez réessayer.',
+          backgroundColor: AppTheme.errorColor,
+        );
+      }
+    }
   }
 
   void _showStoryOptions(StoryData story) {
@@ -412,22 +529,38 @@ class _StoriesPageState extends State<StoriesPage> {
               leading: const Icon(Icons.share),
               title: const Text('Partager'),
               onTap: () {
-                Get.back();
-                Get.snackbar('Partagé', 'Story partagée');
+                if (Get.isBottomSheetOpen ?? false) {
+                  Navigator.of(context).pop();
+                }
+                CommonWidgets.showSafeSnackbar(
+                  title: 'Partagé',
+                  message: 'Story partagée',
+                  backgroundColor: AppTheme.successColor,
+                );
               },
             ),
             ListTile(
               leading: const Icon(Icons.report),
               title: const Text('Signaler'),
               onTap: () {
-                Get.back();
-                Get.snackbar('Signalé', 'Story signalée');
+                if (Get.isBottomSheetOpen ?? false) {
+                  Navigator.of(context).pop();
+                }
+                CommonWidgets.showSafeSnackbar(
+                  title: 'Signalé',
+                  message: 'Story signalée',
+                  backgroundColor: AppTheme.warningColor,
+                );
               },
             ),
             ListTile(
               leading: const Icon(Icons.close),
               title: const Text('Fermer'),
-              onTap: () => Get.back(),
+              onTap: () {
+                if (Get.isBottomSheetOpen ?? false) {
+                  Navigator.of(context).pop();
+                }
+              },
             ),
           ],
         ),
@@ -467,15 +600,36 @@ class _StoryViewPageState extends State<StoryViewPage> {
         children: [
           // Contenu de la story
           Center(
-            child: widget.story.mediaType == MediaType.image
-                ? Image.network(
-                    widget.story.mediaUrl,
-                    fit: BoxFit.contain,
-                  )
+            child: widget.story.mediaUrl != null && widget.story.mediaUrl!.isNotEmpty
+                ? (widget.story.mediaType == MediaType.image
+                    ? Image.network(
+                        widget.story.mediaUrl!,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            color: Colors.black,
+                            child: const Icon(
+                              Icons.image,
+                              size: 100,
+                              color: Colors.white,
+                            ),
+                          );
+                        },
+                      )
+                    : Container(
+                        color: Colors.black,
+                        child: const Icon(
+                          Icons.video_library,
+                          size: 100,
+                          color: Colors.white,
+                        ),
+                      ))
                 : Container(
                     color: Colors.black,
-                    child: const Icon(
-                      Icons.video_library,
+                    child: Icon(
+                      widget.story.mediaType == MediaType.image 
+                          ? Icons.image 
+                          : Icons.video_library,
                       size: 100,
                       color: Colors.white,
                     ),
@@ -530,7 +684,13 @@ class _StoryViewPageState extends State<StoryViewPage> {
                   ),
                   IconButton(
                     icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: () => Get.back(),
+                    onPressed: () {
+                      if (Navigator.canPop(context)) {
+                        Navigator.pop(context);
+                      } else if (Get.isDialogOpen ?? false) {
+                        Navigator.of(context).pop();
+                      }
+                    },
                   ),
                 ],
               ),
@@ -577,7 +737,7 @@ class StoryData {
   final String? userAvatar;
   final String userInitials;
   final String content;
-  final String mediaUrl;
+  final String? mediaUrl;
   final MediaType mediaType;
   final DateTime createdAt;
   final DateTime expiresAt;
@@ -590,12 +750,93 @@ class StoryData {
     this.userAvatar,
     required this.userInitials,
     required this.content,
-    required this.mediaUrl,
+    this.mediaUrl,
     required this.mediaType,
     required this.createdAt,
     required this.expiresAt,
     this.isViewed = false,
   });
+  
+  static StoryData? fromJson(Map<String, dynamic>? json) {
+    if (json == null) return null;
+    
+    // Gérer les valeurs null du backend
+    final id = json['id']?.toString() ?? '';
+    final userId = json['user_id']?.toString() ?? json['userId']?.toString() ?? '';
+    final userName = json['user_name']?.toString() ?? 
+                     json['userName']?.toString() ?? 
+                     'Utilisateur';
+    final userAvatar = json['user_avatar']?.toString() ?? 
+                       json['userAvatar']?.toString();
+    final contentText = json['content_text']?.toString() ?? 
+                        json['contentText']?.toString() ?? '';
+    final mediaUrl = json['media_url']?.toString() ?? 
+                     json['mediaUrl']?.toString();
+    final mediaTypeStr = json['media_type']?.toString() ?? 
+                         json['mediaType']?.toString() ?? 
+                         'image';
+    final mediaType = mediaTypeStr.toLowerCase() == 'video' 
+        ? MediaType.video 
+        : MediaType.image;
+    
+    // Générer les initiales
+    final initials = userName.split(' ').take(2).map((n) => 
+      n.isNotEmpty ? n[0].toUpperCase() : ''
+    ).join('');
+    final userInitials = initials.isNotEmpty 
+        ? initials 
+        : (userName.isNotEmpty ? userName[0].toUpperCase() : 'U');
+    
+    // Parser les dates
+    DateTime createdAt;
+    final createdAtStr = json['created_at']?.toString() ?? 
+                          json['createdAt']?.toString();
+    if (createdAtStr != null && createdAtStr.isNotEmpty) {
+      try {
+        createdAt = DateTime.parse(createdAtStr);
+      } catch (e) {
+        print('⚠️ Erreur de parsing createdAt: $createdAtStr');
+        createdAt = DateTime.now();
+      }
+    } else {
+      createdAt = DateTime.now();
+    }
+    
+    DateTime expiresAt;
+    final expiresAtStr = json['expires_at']?.toString() ?? 
+                         json['expiresAt']?.toString();
+    if (expiresAtStr != null && expiresAtStr.isNotEmpty) {
+      try {
+        expiresAt = DateTime.parse(expiresAtStr);
+      } catch (e) {
+        print('⚠️ Erreur de parsing expiresAt: $expiresAtStr');
+        expiresAt = DateTime.now().add(const Duration(hours: 24));
+      }
+    } else {
+      expiresAt = DateTime.now().add(const Duration(hours: 24));
+    }
+    
+    final isViewed = json['is_viewed'] ?? json['isViewed'] ?? false;
+    
+    if (id.isEmpty || userId.isEmpty) {
+      print('⚠️ Story avec des données incomplètes: $json');
+      return null;
+    }
+    
+    return StoryData(
+      id: id,
+      userId: userId,
+      userName: userName,
+      userAvatar: userAvatar,
+      userInitials: userInitials,
+      content: contentText,
+      mediaUrl: mediaUrl,
+      mediaType: mediaType,
+      createdAt: createdAt,
+      expiresAt: expiresAt,
+      isViewed: isViewed is bool ? isViewed : false,
+    );
+  }
 }
 
 enum MediaType { image, video } 

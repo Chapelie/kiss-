@@ -1,0 +1,33 @@
+# Docker Compose pour Nginx avec le backend Kisse
+version: '3.8'
+
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: kisse-nginx
+    ports:
+      - "80:80"
+      - "443:443"  # Décommentez si vous utilisez HTTPS
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./logs:/var/log/nginx
+      - ./static:/var/www/kisse/static:ro  # Optionnel: fichiers statiques
+    depends_on:
+      - backend
+    networks:
+      - kisse-network
+    restart: unless-stopped
+    labels:
+      - "com.kisse.service=nginx"
+      - "com.kisse.description=Reverse proxy avec support WebSocket"
+
+  backend:
+    # Réutilise la configuration du backend existant
+    # Assurez-vous que le backend est sur le port 8080
+    networks:
+      - kisse-network
+
+networks:
+  kisse-network:
+    driver: bridge
+

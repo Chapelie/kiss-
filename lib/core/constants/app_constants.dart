@@ -5,9 +5,13 @@ class AppConstants {
   static const String appDescription = 'Messagerie Sécurisée';
   
   // URLs du serveur
-  static const String baseUrl = 'https://your-server.com';
-  static const String wsUrl = 'wss://your-server.com/ws';
-  static const String apiUrl = 'https://your-server.com/api';
+  // Pour développement local: http://localhost:8080
+  // Pour émulateur Android: http://10.0.2.2:8080 (10.0.2.2 est l'alias pour localhost de la machine hôte)
+  // Pour appareil physique: http://<IP_MACHINE>:8080
+  // Pour production: https://your-server.com
+  static const String baseUrl = 'http://10.0.2.2:8080'; // 10.0.2.2 pour émulateur Android
+  static const String wsUrl = 'ws://10.0.2.2:8080/ws';
+  static const String apiUrl = 'http://10.0.2.2:8080/api';
   
   // Configuration Signal Protocol
   static const Duration keyRotationInterval = Duration(hours: 24);

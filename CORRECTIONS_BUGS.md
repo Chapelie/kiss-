@@ -96,3 +96,4 @@ if let Ok(Some(_)) = crate::services::CallService::get_active_call(state.db.pool
 
 **Solution** : Créer fonctions utilitaires.
 
+

@@ -157,3 +157,4 @@ async fn update_online_users_last_seen(pool: &PgPool) -> anyhow::Result<()> {
 
 **Toutes les corrections importantes ont été appliquées** ✅
 
+

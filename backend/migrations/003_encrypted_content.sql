@@ -22,3 +22,4 @@ COMMENT ON TABLE encrypted_content IS 'Stores encrypted message content as opaqu
 COMMENT ON COLUMN encrypted_content.content_data IS 'Encrypted content - opaque binary data, backend cannot decrypt';
 COMMENT ON COLUMN encrypted_content.content_hash IS 'SHA-256 hash for integrity verification only';
 
+

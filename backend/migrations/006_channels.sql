@@ -44,3 +44,4 @@ CREATE INDEX IF NOT EXISTS idx_channel_messages_channel_id ON channel_messages(c
 CREATE INDEX IF NOT EXISTS idx_channel_messages_sender_id ON channel_messages(sender_id);
 CREATE INDEX IF NOT EXISTS idx_channel_messages_timestamp ON channel_messages(timestamp DESC);
 
+

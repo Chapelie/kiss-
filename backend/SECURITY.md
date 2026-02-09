@@ -176,3 +176,4 @@ Pour une sécurité maximale, le contenu chiffré pourrait être :
 - Ou transmis via un canal P2P sécurisé
 - Le backend ne serait alors qu'un annuaire de routage
 
+

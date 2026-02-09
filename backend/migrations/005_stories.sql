@@ -27,3 +27,4 @@ CREATE INDEX IF NOT EXISTS idx_stories_created_at ON stories(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_story_views_story_id ON story_views(story_id);
 CREATE INDEX IF NOT EXISTS idx_story_views_viewer_id ON story_views(viewer_id);
 
+

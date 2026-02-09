@@ -851,7 +851,13 @@ class AppController extends GetxController {
   
   /// Met à jour une conversation
   void _updateConversation(String userId, ChatMessage message) {
-    // Implémentation pour mettre à jour une conversation
+    try {
+      // Recharger les conversations depuis l'API pour refléter
+      // le dernier message, les compteurs d'items non lus, etc.
+      _loadConversations();
+    } catch (e) {
+      print('⚠️ Erreur lors de la mise à jour des conversations: $e');
+    }
   }
   
   /// Met à jour la présence d'un utilisateur

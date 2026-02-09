@@ -31,7 +31,7 @@ android {
         applicationId = "com.example.kisse"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = 21  // Android 5.0 (Lollipop) - requis pour certaines fonctionnalités
+        minSdk = flutter.minSdkVersion  // Android 5.0 (Lollipop) - requis pour certaines fonctionnalités
         targetSdk = 34  // Android 14
         versionCode = flutter.versionCode
         versionName = flutter.versionName

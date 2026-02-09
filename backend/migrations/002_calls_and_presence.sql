@@ -35,3 +35,4 @@ SELECT id, 'offline', NOW(), NOW()
 FROM users
 ON CONFLICT (user_id) DO NOTHING;
 
+

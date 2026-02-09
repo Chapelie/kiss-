@@ -370,3 +370,4 @@ final RxBool _isCameraOn = false.obs;
    - Réduction de qualité si connexion faible
    - Indicateur de qualité pour l'utilisateur
 
+

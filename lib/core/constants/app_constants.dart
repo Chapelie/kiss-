@@ -8,10 +8,25 @@ class AppConstants {
   // Pour développement local: http://localhost:8080
   // Pour émulateur Android: http://10.0.2.2:8080 (10.0.2.2 est l'alias pour localhost de la machine hôte)
   // Pour appareil physique: http://<IP_MACHINE>:8080
-  // Pour production: https://your-server.com
-  static const String baseUrl = 'http://10.0.2.2:8080'; // 10.0.2.2 pour émulateur Android
-  static const String wsUrl = 'ws://10.0.2.2:8080/ws';
-  static const String apiUrl = 'http://10.0.2.2:8080/api';
+  // Pour production: https://kisse.daali.africa
+  
+  // Mode de l'application (true = production, false = développement)
+  static const bool isProduction = false; // Changez à false pour le développement local
+  
+  // URLs de production
+  static const String productionBaseUrl = 'https://kisse.daali.africa';
+  static const String productionWsUrl = 'wss://kisse.daali.africa/ws';
+  static const String productionApiUrl = 'https://kisse.daali.africa/api';
+  
+  // URLs de développement
+  // Utilise l'IP du serveur directement (port 8080 pour le backend HTTP)
+  static const String devBaseUrl = 'http://10.32.81.171:8080';
+  static const String devWsUrl = 'ws://10.32.81.171:8080/ws';
+  static const String devApiUrl = 'http://10.32.81.171:8080/api';
+  // URLs actives (basées sur isProduction)
+  static String get baseUrl => isProduction ? productionBaseUrl : devBaseUrl;
+  static String get wsUrl => isProduction ? productionWsUrl : devWsUrl;
+  static String get apiUrl => isProduction ? productionApiUrl : devApiUrl;
   
   // Configuration Signal Protocol
   static const Duration keyRotationInterval = Duration(hours: 24);

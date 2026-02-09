@@ -305,3 +305,4 @@ if (token == null) {
 // Vérifier l'intégrité du hash
 ```
 
+

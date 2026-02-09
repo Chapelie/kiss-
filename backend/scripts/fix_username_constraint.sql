@@ -71,3 +71,4 @@ ALTER TABLE users ADD CONSTRAINT users_username_key UNIQUE (username);
 -- 6. Créer l'index
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 
+

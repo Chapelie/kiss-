@@ -153,3 +153,4 @@ L'application s'adapte automatiquement :
 
 Tous les composants sont maintenant **adaptatifs** et respectent les guidelines de chaque plateforme ! 🎉
 
+

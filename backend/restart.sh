@@ -41,3 +41,4 @@ echo ""
 echo "💡 Pour voir les logs en temps réel: docker-compose logs -f"
 echo "💡 Pour arrêter: docker-compose down"
 
+

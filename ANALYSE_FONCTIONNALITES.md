@@ -450,3 +450,4 @@ CREATE TABLE encrypted_content (
 - [ ] Créer fonctions utilitaires pour récidives
 - [ ] Ajouter nettoyage automatique
 
+

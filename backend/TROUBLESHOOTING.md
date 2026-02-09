@@ -148,3 +148,4 @@ Si le problème persiste :
 3. Vérifier la version de Docker Compose : `docker-compose --version`
 4. Vérifier les ressources système : `docker system df`
 
+

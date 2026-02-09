@@ -155,3 +155,4 @@ Le backend est **complet et prêt pour l'intégration** avec l'application Flutt
 
 Toutes les fonctionnalités développées dans Flutter sont implémentées côté backend avec une architecture de sécurité respectant le protocole Signal (passerelle aveugle).
 
+

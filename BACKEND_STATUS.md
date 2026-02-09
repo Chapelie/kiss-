@@ -35,3 +35,4 @@ Pour un **appareil physique** (pas un émulateur), vous devez :
 
 **Prochaine étape** : Corriger les erreurs de compilation Rust dans le backend.
 
+

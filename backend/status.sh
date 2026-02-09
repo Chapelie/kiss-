@@ -32,3 +32,4 @@ echo "   Logs en temps réel: docker-compose logs -f"
 echo "   Redémarrer: docker-compose restart"
 echo "   Arrêter: docker-compose down"
 
+

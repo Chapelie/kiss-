@@ -246,3 +246,4 @@ flutter doctor -v
 3. Configurez les certificats iOS pour la distribution
 4. Testez toutes les permissions sur des appareils réels
 
+

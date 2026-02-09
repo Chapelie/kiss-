@@ -250,3 +250,4 @@ Les appels utilisent WebSocket pour la signalisation :
 - [Architecture des Appels](./CALLS_ARCHITECTURE.md)
 - [API Backend](./backend/API.md)
 
+
